@@ -1,0 +1,38 @@
+{
+  "name": "ghostfill",
+  "version": "0.1.0",
+  "description": "AI-powered form filler — select a block, detect fields, fill with AI-generated data",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "demo": "npx serve demo"
+  },
+  "keywords": [
+    "form-filler",
+    "ai",
+    "openai",
+    "fake-data",
+    "testing",
+    "developer-tool"
+  ],
+  "author": "afkhalid",
+  "license": "MIT",
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}
