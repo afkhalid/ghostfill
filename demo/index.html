@@ -115,15 +115,12 @@
     <p class="subtitle">AI-powered form filler. Select a block, describe the data, let AI fill it.</p>
 
     <div class="setup card">
-      <h2>Setup</h2>
-      <div class="form-group" style="margin-bottom: 8px;">
-        <label for="api-key">OpenAI API Key</label>
-        <input type="password" id="api-key" placeholder="sk-..." />
-        <small>Your key stays in the browser — direct API calls, no server.</small>
-      </div>
-      <button id="init-btn">Initialize GhostFill</button>
-      <p style="margin-top: 8px; font-size: 13px; color: #6b7280;">
-        Or press <span class="kbd">Alt+G</span> after initializing.
+      <h2>How to use</h2>
+      <p style="font-size: 13px; color: #6b7280; line-height: 1.6;">
+        1. Click the <strong>gear icon</strong> in the bottom toolbar to set your OpenAI API key<br/>
+        2. Click the <strong>crosshair</strong> to select a form block<br/>
+        3. Click the <strong>star</strong> to enter a prompt and fill fields with AI<br/>
+        4. Toggle with <span class="kbd">Alt+G</span>
       </p>
     </div>
 
@@ -254,18 +251,7 @@
 
   <script type="module">
     import { init } from "../dist/index.mjs";
-
-    document.getElementById("init-btn").addEventListener("click", () => {
-      const apiKey = document.getElementById("api-key").value.trim();
-      if (!apiKey) {
-        alert("Please enter your OpenAI API key");
-        return;
-      }
-
-      init({ apiKey });
-      document.getElementById("init-btn").textContent = "GhostFill Active!";
-      document.getElementById("init-btn").style.background = "#22c55e";
-    });
+    init();
   </script>
 </body>
 </html>

@@ -9,20 +9,21 @@ export type { GhostFillOptions, DetectedField, FieldFillData } from "./types";
 let instance: { destroy: () => void } | null = null;
 
 /**
- * Initialize GhostFill — adds a floating button to the page.
+ * Initialize GhostFill — adds a bottom toolbar to the page.
+ * API key can be provided here or set via the Settings UI.
  *
  * @example
  * ```ts
  * import { init } from "ghostfill";
  *
+ * // With key (optional — can set in UI instead)
  * init({ apiKey: "sk-..." });
+ *
+ * // Without key — configure in Settings
+ * init();
  * ```
  */
-export function init(options: GhostFillOptions): { destroy: () => void } {
-  if (!options.apiKey) {
-    throw new Error("GhostFill: apiKey is required");
-  }
-
+export function init(options: GhostFillOptions = {}): { destroy: () => void } {
   // Destroy previous instance if exists
   if (instance) {
     instance.destroy();

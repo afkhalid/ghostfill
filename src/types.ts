@@ -1,17 +1,22 @@
 /** Configuration options for GhostFill */
 export interface GhostFillOptions {
-  /** OpenAI API key */
-  apiKey: string;
+  /** OpenAI API key (optional — can be set via settings UI) */
+  apiKey?: string;
   /** OpenAI model to use (default: "gpt-4o-mini") */
   model?: string;
   /** Custom OpenAI base URL (for proxies) */
   baseURL?: string;
   /** Keyboard shortcut to toggle GhostFill (default: "Alt+G") */
   shortcut?: string;
-  /** Position of the floating button */
-  position?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
   /** Custom system prompt to prepend */
   systemPrompt?: string;
+}
+
+/** Persisted settings (localStorage) */
+export interface GhostFillSettings {
+  apiKey: string;
+  model: string;
+  baseURL: string;
 }
 
 /** A detected form field */
