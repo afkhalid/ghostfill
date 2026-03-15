@@ -6,15 +6,19 @@ type CancelCallback = () => void;
 let currentHighlight: HTMLElement | null = null;
 let overlay: HTMLDivElement | null = null;
 
-function createOverlay(): HTMLDivElement {
+function createOverlay(color: string): HTMLDivElement {
   const div = document.createElement("div");
   div.id = "ghostfill-selector-overlay";
+  // Convert hex to rgba for background
+  const r = parseInt(color.slice(1, 3), 16);
+  const g = parseInt(color.slice(3, 5), 16);
+  const b = parseInt(color.slice(5, 7), 16);
   Object.assign(div.style, {
     position: "fixed",
     pointerEvents: "none",
-    border: "2px dashed #3b82f6",
+    border: `2px dashed ${color}`,
     borderRadius: "4px",
-    backgroundColor: "rgba(59, 130, 246, 0.08)",
+    backgroundColor: `rgba(${r}, ${g}, ${b}, 0.08)`,
     zIndex: "2147483645",
     transition: "all 0.15s ease",
   });
@@ -22,8 +26,8 @@ function createOverlay(): HTMLDivElement {
   return div;
 }
 
-function positionOverlay(el: HTMLElement) {
-  if (!overlay) overlay = createOverlay();
+function positionOverlay(el: HTMLElement, color: string) {
+  if (!overlay) overlay = createOverlay(color);
   const rect = el.getBoundingClientRect();
   Object.assign(overlay.style, {
     top: `${rect.top}px`,
@@ -45,15 +49,12 @@ function removeOverlay() {
 
 /** Find the best container element (prefer forms, fieldsets, or sizeable containers) */
 function findBestContainer(target: HTMLElement): HTMLElement {
-  // If target is a form or fieldset, use it directly
   if (target.tagName === "FORM" || target.tagName === "FIELDSET") return target;
 
-  // Walk up to find the nearest form, fieldset, or container with inputs
   let el: HTMLElement | null = target;
   while (el) {
     if (el.tagName === "FORM" || el.tagName === "FIELDSET") return el;
 
-    // Check if this element contains form fields
     const inputs = el.querySelectorAll(
       "input:not([type=hidden]):not([type=submit]):not([type=button]), textarea, select"
     );
@@ -69,20 +70,20 @@ function findBestContainer(target: HTMLElement): HTMLElement {
 export function startSelection(
   onSelect: SelectCallback,
   onCancel: CancelCallback,
-  ghostfillRoot?: HTMLElement
+  ghostfillRoot?: HTMLElement,
+  highlightColor = "#6366f1"
 ): () => void {
   document.body.style.cursor = "crosshair";
 
   function handleMouseMove(e: MouseEvent) {
     const target = e.target as HTMLElement;
-    // Ignore our own UI
     if (ghostfillRoot?.contains(target)) return;
     if (target.id === "ghostfill-selector-overlay") return;
 
     const container = findBestContainer(target);
     if (container !== currentHighlight) {
       currentHighlight = container;
-      positionOverlay(container);
+      positionOverlay(container, highlightColor);
     }
   }
 

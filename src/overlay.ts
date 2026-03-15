@@ -1,36 +1,65 @@
-import type { GhostFillOptions, GhostFillState, GhostFillSettings, DetectedField } from "./types";
-import { detectFields } from "./detector";
+import type { GhostFillOptions, GhostFillState, GhostFillSettings, DetectedField, Provider, Preset } from "./types";
+import { PROVIDERS } from "./types";
+import { detectFields, extractBlockContext } from "./detector";
 import { generateFillData } from "./ai";
+import { generateFakeData } from "./faker";
 import { fillFields } from "./filler";
 import { startSelection } from "./selector";
 
 const STORAGE_KEY = "ghostfill_settings";
+const POS_KEY = "ghostfill_pos";
+const FAB_POS_KEY = "ghostfill_fab_pos";
 
 function loadSettings(): GhostFillSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch {}
-  return { apiKey: "", model: "gpt-4o-mini", baseURL: "" };
+  return { apiKey: "", provider: "openai" as const, highlightColor: "#6366f1", theme: "dark" as const, useAI: false, presets: [], activePresetId: null };
 }
 
 function saveSettings(s: GhostFillSettings) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
 }
 
-// ─── Icons (24x24 SVG paths) ────────────────────────────────────────────────
+function loadPosition(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(POS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return null;
+}
+
+function savePosition(x: number, y: number) {
+  localStorage.setItem(POS_KEY, JSON.stringify({ x, y }));
+}
+
+/** Extract a clean error message from OpenAI API errors */
+function cleanError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  // Try to extract the "message" field from JSON error bodies
+  const match = raw.match(/"message"\s*:\s*"([^"]+)"/);
+  if (match) return match[1];
+  // Strip "OpenAI API error (NNN): " prefix noise
+  const stripped = raw.replace(/^OpenAI API error \(\d+\):\s*/, "");
+  // If it's JSON, try to parse
+  try {
+    const parsed = JSON.parse(stripped);
+    if (parsed?.error?.message) return parsed.error.message;
+  } catch {}
+  return stripped.length > 80 ? stripped.slice(0, 80) + "..." : stripped;
+}
+
+// ─── Icons ──────────────────────────────────────────────────────────────────
 
 const ICONS = {
   select: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
     <circle cx="12" cy="12" r="4"/>
   </svg>`,
-  eye: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-    <circle cx="12" cy="12" r="3"/>
-  </svg>`,
-  fill: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+  sparkles: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+    <path d="M20 3v4M22 5h-4"/>
   </svg>`,
   settings: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="3"/>
@@ -39,17 +68,29 @@ const ICONS = {
   close: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
   </svg>`,
-  ghost: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  ghost: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 2C7.58 2 4 5.58 4 10v10l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V10c0-4.42-3.58-8-8-8z"/>
     <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
     <circle cx="15" cy="10" r="1.5" fill="currentColor"/>
   </svg>`,
-  check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
-  </svg>`,
   spinner: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
     <path d="M12 2a10 10 0 0 1 10 10"/>
   </svg>`,
+  // Field type icons (14x14)
+  ftText: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>`,
+  ftEmail: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+  ftPhone: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>`,
+  ftNumber: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>`,
+  ftDate: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
+  ftSelect: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>`,
+  ftTextarea: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 10H3M21 6H3M21 14H3M17 18H3"/></svg>`,
+  ftCheckbox: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg>`,
+  ftRadio: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4" fill="currentColor"/></svg>`,
+  ftUrl: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>`,
+  ftPassword: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
+  ftFile: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>`,
+  sun: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`,
+  moon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>`,
 };
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
@@ -64,12 +105,8 @@ const CSS = `
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* ── Bottom toolbar ── */
   .gf-bar {
     position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
     z-index: 2147483646;
     display: flex;
     align-items: center;
@@ -79,7 +116,10 @@ const CSS = `
     padding: 5px 6px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
     user-select: none;
+    cursor: grab;
+    pointer-events: auto;
   }
+  .gf-bar.dragging { cursor: grabbing; opacity: 0.9; }
 
   .gf-bar-btn {
     position: relative;
@@ -95,295 +135,273 @@ const CSS = `
     justify-content: center;
     transition: background 0.15s, color 0.15s;
   }
-  .gf-bar-btn:hover {
-    background: #27272a;
-    color: #fafafa;
-  }
-  .gf-bar-btn.active {
-    background: #3f3f46;
-    color: #fafafa;
-  }
-  .gf-bar-btn:disabled {
-    opacity: 0.35;
-    cursor: not-allowed;
-  }
-  .gf-bar-btn:disabled:hover {
-    background: transparent;
-    color: #a1a1aa;
-  }
+  .gf-bar-btn:hover { background: #27272a; color: #fafafa; }
+  .gf-bar-btn.active { background: #3f3f46; color: #fafafa; }
+  .gf-bar-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .gf-bar-btn:disabled:hover { background: transparent; color: #a1a1aa; }
 
   .gf-divider {
-    width: 1px;
-    height: 20px;
-    background: #3f3f46;
-    margin: 0 4px;
-    flex-shrink: 0;
+    width: 1px; height: 20px; background: #3f3f46; margin: 0 4px; flex-shrink: 0;
   }
 
-  /* Tooltip */
-  .gf-bar-btn::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 4px 10px;
-    background: #09090b;
-    color: #e4e4e7;
-    font-size: 11px;
-    font-weight: 500;
-    white-space: nowrap;
-    border-radius: 6px;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.15s;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+
+  .gf-fab {
+    position: fixed; z-index: 2147483646;
+    width: 44px; height: 44px; border-radius: 50%; border: none;
+    background: #18181b; color: #a1a1aa; cursor: grab;
+    display: none; align-items: center; justify-content: center;
+    pointer-events: auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
+    transition: transform 0.15s, color 0.15s;
   }
-  .gf-bar-btn:hover::after {
-    opacity: 1;
+  .gf-fab:hover { color: #a78bfa; }
+  .gf-fab:hover > svg { animation: gf-float 1.2s ease-in-out infinite; }
+  .gf-fab.visible { display: flex; }
+  @keyframes gf-float {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-2px) rotate(-5deg); }
+    75% { transform: translateY(1px) rotate(5deg); }
   }
 
-  /* ── Popover (settings / prompt / fields) ── */
   .gf-popover {
-    position: fixed;
-    bottom: 72px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2147483646;
-    width: 340px;
-    background: #18181b;
-    border-radius: 14px;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
-    display: none;
-    flex-direction: column;
-    overflow: hidden;
-    animation: gf-pop-in 0.15s ease;
+    position: fixed; z-index: 2147483646;
+    background: #1a1a1a; border-radius: 16px; pointer-events: auto;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.08);
+    display: none; flex-direction: column; overflow: hidden;
+    min-width: 280px;
   }
   .gf-popover.open { display: flex; }
 
-  @keyframes gf-pop-in {
-    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
-    to { opacity: 1; transform: translateX(-50%) translateY(0); }
-  }
-
   .gf-pop-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px 10px;
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 24px; padding: 13px 16px 0;
+    margin-bottom: 8px; padding-bottom: 9px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
   }
   .gf-pop-header h3 {
-    font-size: 13px;
-    font-weight: 600;
-    color: #fafafa;
-    letter-spacing: 0.01em;
+    font-size: 13px; font-weight: 600; color: #fff;
+    letter-spacing: -0.0094em;
+  }
+  .gf-pop-header .gf-slash { color: rgba(255,255,255,0.5); }
+  .gf-pop-header .gf-header-right {
+    display: flex; align-items: center; gap: 6px;
   }
   .gf-pop-header .gf-version {
-    font-size: 11px;
-    color: #52525b;
-    font-weight: 400;
+    font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.4);
+    letter-spacing: -0.0094em;
   }
-
-  .gf-pop-body {
-    padding: 0 16px 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-height: 400px;
-    overflow-y: auto;
+  .gf-theme-btn {
+    width: 20px; height: 20px; border: none; border-radius: 4px;
+    background: transparent; color: rgba(255,255,255,0.4); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.15s;
   }
+  .gf-theme-btn:hover { color: rgba(255,255,255,0.7); }
+  .gf-theme-btn svg { width: 14px; height: 14px; }
 
   .gf-sep {
-    height: 1px;
-    background: #27272a;
-    margin: 0 -16px;
+    height: 1px; background: rgba(255,255,255,0.07);
+    margin: 8px 0 10px;
   }
 
-  /* ── Form elements ── */
-  .gf-field {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
+  /* Highlight color picker */
+  .gf-colors {
+    display: flex; gap: 6px; flex-wrap: wrap;
   }
+  .gf-color-dot {
+    width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; transition: border-color 0.15s, transform 0.1s;
+  }
+  .gf-color-dot:hover { transform: scale(1.1); }
+  .gf-color-dot.selected { border-color: #fafafa; }
+
+  .gf-pop-body {
+    padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px;
+    max-height: 400px; overflow-y: auto;
+  }
+
+  .gf-field { display: flex; flex-direction: column; gap: 4px; }
   .gf-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: #a1a1aa;
+    font-size: 13px; font-weight: 400; color: rgba(255,255,255,0.5);
+    letter-spacing: -0.0094em; display: flex; align-items: center; gap: 2px;
   }
   .gf-input {
-    width: 100%;
-    padding: 8px 10px;
-    background: #09090b;
-    border: 1px solid #27272a;
-    border-radius: 8px;
-    color: #fafafa;
-    font-family: inherit;
-    font-size: 13px;
-    outline: none;
-    transition: border-color 0.15s;
+    width: 100%; padding: 6px 8px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff;
+    font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.15s;
   }
-  .gf-input:focus {
-    border-color: #6366f1;
-    box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
+  .gf-input:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+  .gf-input::placeholder { color: rgba(255,255,255,0.25); }
+  .gf-input-mono { font-family: "SF Mono", "Fira Code", monospace; font-size: 12px; }
+
+  textarea.gf-input { min-height: 56px; resize: vertical; line-height: 1.5; }
+
+  .gf-save-btn, .gf-fill-btn {
+    width: 100%; padding: 7px; border: none; border-radius: 8px;
+    background: #6366f1; color: white; font-family: inherit;
+    font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
   }
-  .gf-input::placeholder {
-    color: #52525b;
+  .gf-save-btn:hover, .gf-fill-btn:hover { background: #4f46e5; }
+  .gf-fill-btn:disabled { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.25); cursor: not-allowed; }
+
+  .gf-pop-body::-webkit-scrollbar { width: 6px; }
+  .gf-pop-body::-webkit-scrollbar-track { background: transparent; }
+  .gf-pop-body::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+
+  .gf-field-count { font-size: 11px; color: #71717a; }
+
+  /* ── Field cards grid ── */
+  .gf-fields-grid {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    max-height: 140px; overflow-y: auto; padding: 2px;
+    scrollbar-color: #3f3f46 transparent;
   }
-  .gf-input-mono {
-    font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
-    font-size: 12px;
-    letter-spacing: -0.02em;
+  .gf-fields-grid::-webkit-scrollbar { width: 5px; }
+  .gf-fields-grid::-webkit-scrollbar-track { background: transparent; }
+  .gf-fields-grid::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+
+  .gf-field-card {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 8px; border-radius: 8px;
+    background: #27272a; border: 1px solid #3f3f46;
+    cursor: default; transition: border-color 0.15s, background 0.15s;
+    max-width: 100%;
+  }
+  .gf-field-card:hover {
+    border-color: #6366f1; background: #2e2442;
+  }
+  .gf-field-card .gf-fc-icon {
+    flex-shrink: 0; width: 16px; height: 16px; color: #6366f1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .gf-field-card .gf-fc-icon svg { width: 14px; height: 14px; }
+  .gf-field-card .gf-fc-label {
+    font-size: 11px; color: #d4d4d8; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .gf-field-card .gf-fc-req {
+    color: #f87171; font-size: 11px; flex-shrink: 0;
   }
 
-  select.gf-input {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2371717a' viewBox='0 0 16 16'%3e%3cpath d='M4.646 6.646a.5.5 0 0 1 .708 0L8 9.293l2.646-2.647a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 10px center;
-    padding-right: 28px;
+  /* Inline status text inside prompt popover */
+  .gf-status {
+    font-size: 11px; padding: 4px 0; text-align: center; min-height: 18px;
+    transition: color 0.15s;
   }
+  .gf-status.error { color: #f87171; }
+  .gf-status.success { color: #4ade80; }
+  .gf-status.info { color: #71717a; }
 
-  textarea.gf-input {
-    min-height: 56px;
-    resize: vertical;
-    line-height: 1.5;
-  }
-
-  .gf-save-btn {
-    width: 100%;
-    padding: 8px;
-    border: none;
-    border-radius: 8px;
-    background: #6366f1;
-    color: white;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-  }
-  .gf-save-btn:hover { background: #4f46e5; }
-
-  .gf-fill-btn {
-    width: 100%;
-    padding: 8px;
-    border: none;
-    border-radius: 8px;
-    background: #6366f1;
-    color: white;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-  }
-  .gf-fill-btn:hover { background: #4f46e5; }
-  .gf-fill-btn:disabled {
-    background: #27272a;
-    color: #52525b;
-    cursor: not-allowed;
-  }
-
-  /* ── Status toast ── */
-  .gf-toast {
-    position: fixed;
-    bottom: 72px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 2147483647;
-    padding: 8px 16px;
-    border-radius: 10px;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  }
-  .gf-toast.show {
-    opacity: 1;
-  }
-  .gf-toast.info { background: #1e3a5f; color: #93c5fd; }
-  .gf-toast.success { background: #14532d; color: #86efac; }
-  .gf-toast.error { background: #7f1d1d; color: #fca5a5; }
-  .gf-toast.selecting { background: #3b0764; color: #c4b5fd; }
-
-  /* ── Field list ── */
-  .gf-field-list {
-    list-style: none;
-    max-height: 100px;
-    overflow-y: auto;
-    background: #09090b;
-    border-radius: 8px;
-    padding: 6px 0;
-  }
-  .gf-field-list li {
-    padding: 3px 10px;
-    font-size: 11px;
-    color: #a1a1aa;
-  }
-  .gf-field-list li:nth-child(odd) { background: rgba(255,255,255,0.02); }
-
-  .gf-field-count {
-    font-size: 11px;
-    color: #71717a;
-    padding: 2px 0;
-  }
-
-  /* ── Saved indicator ── */
-  .gf-saved {
-    font-size: 11px;
-    color: #22c55e;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    opacity: 0;
-    transition: opacity 0.2s;
-  }
-  .gf-saved.show { opacity: 1; }
-
-  /* ── Spinner ── */
-  .gf-spin {
-    animation: gf-spin 0.7s linear infinite;
-  }
+  .gf-spin { animation: gf-spin 0.7s linear infinite; }
   @keyframes gf-spin { to { transform: rotate(360deg); } }
 
-  /* ── Badge (field count on select button) ── */
   .gf-badge {
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 7px;
-    background: #6366f1;
-    color: white;
-    font-size: 9px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
+    position: absolute; top: 2px; right: 2px; width: 14px; height: 14px;
+    border-radius: 7px; background: #6366f1; color: white;
+    font-size: 9px; font-weight: 700; display: flex; align-items: center;
+    justify-content: center; line-height: 1;
   }
 
-  /* ── No-key warning dot ── */
   .gf-dot-warn {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 6px;
-    height: 6px;
-    border-radius: 3px;
-    background: #f59e0b;
+    position: absolute; top: 4px; right: 4px; width: 6px; height: 6px;
+    border-radius: 3px; background: #f59e0b;
+  }
+
+  /* Toggle switch */
+  .gf-toggle {
+    position: relative; display: inline-block; width: 32px; height: 18px; cursor: pointer;
+  }
+  .gf-toggle input { opacity: 0; width: 0; height: 0; }
+  .gf-toggle-slider {
+    position: absolute; inset: 0; background: #3f3f46; border-radius: 9px;
+    transition: background 0.2s;
+  }
+  .gf-toggle-slider::before {
+    content: ""; position: absolute; left: 2px; top: 2px;
+    width: 14px; height: 14px; border-radius: 50%; background: #fafafa;
+    transition: transform 0.2s;
+  }
+  .gf-toggle input:checked + .gf-toggle-slider { background: #6366f1; }
+  .gf-toggle input:checked + .gf-toggle-slider::before { transform: translateX(14px); }
+
+  /* Custom inline picker (like Agentation's "Standard") */
+  .gf-picker {
+    position: relative; display: flex; align-items: center; gap: 4px;
+    cursor: pointer; user-select: none;
+  }
+  .gf-picker-value {
+    font-size: 13px; font-weight: 400; color: rgba(255,255,255,0.85);
+    letter-spacing: -0.0094em;
+  }
+  .gf-picker-dots {
+    font-size: 14px; color: #52525b; line-height: 1;
+  }
+  .gf-picker-menu {
+    display: none; position: absolute; right: 0; top: calc(100% + 6px);
+    background: #09090b; border: 1px solid #27272a; border-radius: 8px;
+    padding: 4px 0; min-width: 140px; z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .gf-picker-menu.open { display: block; }
+  .gf-picker-option {
+    padding: 6px 12px; font-size: 12px; color: #a1a1aa; cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .gf-picker-option:hover { background: #27272a; color: #fafafa; }
+  .gf-picker-option.selected { color: #6366f1; }
+
+  /* Preset chips */
+  .gf-presets-row {
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  }
+  .gf-preset-chip {
+    padding: 3px 8px; border-radius: 10px; font-size: 11px; font-weight: 500;
+    background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5);
+    cursor: pointer; border: 1px solid transparent;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .gf-preset-chip:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.1); }
+  .gf-preset-chip.active { border-color: #6366f1; color: #a5b4fc; background: rgba(99,102,241,0.12); }
+  .gf-preset-chip.add {
+    color: rgba(255,255,255,0.3); border: 1px dashed rgba(255,255,255,0.15);
+    background: transparent;
+  }
+  .gf-preset-chip.add:hover { color: rgba(255,255,255,0.6); border-color: rgba(255,255,255,0.3); }
+
+  /* Preset list in settings */
+  .gf-preset-list { display: flex; flex-direction: column; gap: 4px; }
+  .gf-preset-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.04);
+  }
+  .gf-preset-item-name { font-size: 12px; color: rgba(255,255,255,0.7); }
+  .gf-preset-del {
+    background: none; border: none; color: rgba(255,255,255,0.25); cursor: pointer;
+    font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.15s;
+  }
+  .gf-preset-del:hover { color: #f87171; }
+
+  /* Preset add form */
+  .gf-preset-form { display: flex; flex-direction: column; gap: 6px; }
+  .gf-preset-form-row { display: flex; gap: 4px; }
+  .gf-preset-form-row .gf-input { flex: 1; }
+  .gf-preset-form-actions { display: flex; gap: 4px; justify-content: flex-end; }
+  .gf-preset-form-btn {
+    padding: 3px 10px; border: none; border-radius: 6px; font-size: 11px;
+    cursor: pointer; font-family: inherit; transition: background 0.15s;
+  }
+  .gf-preset-form-btn.save { background: #6366f1; color: white; }
+  .gf-preset-form-btn.save:hover { background: #4f46e5; }
+  .gf-preset-form-btn.cancel { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); }
+  .gf-preset-form-btn.cancel:hover { background: rgba(255,255,255,0.1); }
+
+  /* Help badge */
+  .gf-help {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #3f3f46; color: #a1a1aa; font-size: 9px; font-weight: 700;
+    cursor: help; flex-shrink: 0;
   }
 `;
 
@@ -393,7 +411,6 @@ export function createOverlay(options: GhostFillOptions): {
   state: GhostFillState;
   destroy: () => void;
 } {
-  // Merge options into saved settings
   const saved = loadSettings();
   if (options.apiKey && !saved.apiKey) {
     saved.apiKey = options.apiKey;
@@ -402,23 +419,19 @@ export function createOverlay(options: GhostFillOptions): {
   if (options.model && !saved.model) saved.model = options.model;
   if (options.baseURL && !saved.baseURL) saved.baseURL = options.baseURL;
 
-  // Shadow host
   const host = document.createElement("div");
   host.id = "ghostfill-root";
+  host.style.cssText = "display:contents;";
   document.body.appendChild(host);
-  const shadow = host.attachShadow({ mode: "closed" });
+  const shadow = host.attachShadow({ mode: "open" });
 
   const style = document.createElement("style");
   style.textContent = CSS;
   shadow.appendChild(style);
 
   const state: GhostFillState = {
-    active: true,
-    selecting: false,
-    selectedBlock: null,
-    fields: [],
-    overlay: host,
-    shadowRoot: shadow,
+    active: false, selecting: false, selectedBlock: null,
+    fields: [], overlay: host, shadowRoot: shadow,
   };
 
   // ── Toolbar ──
@@ -426,113 +439,338 @@ export function createOverlay(options: GhostFillOptions): {
   bar.className = "gf-bar";
   shadow.appendChild(bar);
 
-  function makeBtn(icon: string, tooltip: string): HTMLButtonElement {
+  // Start minimized — bar hidden, fab visible
+  bar.style.display = "none";
+  const savedPos = loadPosition();
+  if (savedPos) {
+    bar.style.left = `${savedPos.x}px`;
+    bar.style.top = `${savedPos.y}px`;
+  } else {
+    bar.style.bottom = "20px";
+    bar.style.left = "50%";
+    bar.style.transform = "translateX(-50%)";
+  }
+
+  function makeBtn(icon: string): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.className = "gf-bar-btn";
     btn.innerHTML = icon;
-    btn.setAttribute("data-tooltip", tooltip);
     return btn;
   }
 
-  const btnSelect = makeBtn(ICONS.select, "Select block");
-  const btnEye = makeBtn(ICONS.eye, "View fields");
-  const btnFill = makeBtn(ICONS.fill, "Fill fields");
-  const btnSettings = makeBtn(ICONS.settings, "Settings");
-  const btnClose = makeBtn(ICONS.close, "Close");
+  const btnSelect = makeBtn(ICONS.select);
+  const btnFill = makeBtn(ICONS.sparkles);
+  const btnSettings = makeBtn(ICONS.settings);
+  const btnMinimize = makeBtn(ICONS.close);
 
-  btnEye.disabled = true;
   btnFill.disabled = true;
 
-  // Badge for field count
   const badge = document.createElement("span");
   badge.className = "gf-badge";
   badge.style.display = "none";
   btnSelect.style.position = "relative";
   btnSelect.appendChild(badge);
 
-  // Warning dot for missing API key
   const dotWarn = document.createElement("span");
   dotWarn.className = "gf-dot-warn";
-  dotWarn.title = "API key not set";
   btnSettings.style.position = "relative";
   btnSettings.appendChild(dotWarn);
-  if (saved.apiKey) dotWarn.style.display = "none";
+  if (!saved.useAI || saved.apiKey) dotWarn.style.display = "none";
 
   const divider1 = document.createElement("span");
   divider1.className = "gf-divider";
   const divider2 = document.createElement("span");
   divider2.className = "gf-divider";
 
-  bar.append(btnSelect, btnEye, btnFill, divider1, btnSettings, divider2, btnClose);
+  bar.append(btnSelect, btnFill, divider1, btnSettings, divider2, btnMinimize);
 
-  // ── Toast ──
-  const toast = document.createElement("div");
-  toast.className = "gf-toast info";
-  shadow.appendChild(toast);
+  // ── Mini FAB ──
+  const fab = document.createElement("button");
+  fab.className = "gf-fab visible";
+  fab.innerHTML = ICONS.ghost;
+  fab.title = "GhostFill";
+  // Restore saved fab position or default bottom-right
+  const savedFabPos = (() => {
+    try {
+      const raw = localStorage.getItem(FAB_POS_KEY);
+      if (raw) return JSON.parse(raw) as { x: number; y: number };
+    } catch {}
+    return null;
+  })();
+  // Always clamp to viewport — ignore stale saved positions
+  if (savedFabPos) {
+    const x = Math.min(savedFabPos.x, window.innerWidth - 60);
+    const y = Math.min(savedFabPos.y, window.innerHeight - 60);
+    fab.style.left = `${Math.max(8, x)}px`;
+    fab.style.top = `${Math.max(8, y)}px`;
+  } else {
+    fab.style.right = "80px";
+    fab.style.bottom = "80px";
+  }
+  shadow.appendChild(fab);
 
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
-  function showToast(text: string, type: "info" | "success" | "error" | "selecting", duration = 3000) {
-    if (toastTimer) clearTimeout(toastTimer);
-    toast.textContent = text;
-    toast.className = `gf-toast ${type} show`;
-    if (duration > 0) {
-      toastTimer = setTimeout(() => {
-        toast.classList.remove("show");
-      }, duration);
+  function positionFab() {
+    // Use last saved fab position, or fall back to bar center
+    const savedFab = (() => {
+      try {
+        const raw = localStorage.getItem(FAB_POS_KEY);
+        if (raw) return JSON.parse(raw) as { x: number; y: number };
+      } catch {}
+      return null;
+    })();
+
+    if (savedFab) {
+      fab.style.left = `${savedFab.x}px`;
+      fab.style.top = `${savedFab.y}px`;
+    } else {
+      const barRect = bar.getBoundingClientRect();
+      fab.style.left = `${barRect.left + barRect.width / 2 - 22}px`;
+      fab.style.top = `${barRect.top + barRect.height / 2 - 22}px`;
+    }
+    fab.style.bottom = "";
+    fab.style.right = "";
+  }
+
+  // ── Drag ──
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let barStartX = 0;
+  let barStartY = 0;
+  let hasDragged = false;
+
+  function onDragStart(e: MouseEvent) {
+    isDragging = true;
+    hasDragged = false;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    const rect = bar.getBoundingClientRect();
+    barStartX = rect.left;
+    barStartY = rect.top;
+    bar.style.transform = "none";
+    bar.style.bottom = "";
+    document.addEventListener("mousemove", onDragMove);
+    document.addEventListener("mouseup", onDragEnd);
+  }
+
+  function onDragMove(e: MouseEvent) {
+    if (!isDragging) return;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
+    if (!hasDragged && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      hasDragged = true;
+      bar.classList.add("dragging");
+    }
+    if (!hasDragged) return;
+    const barW = bar.offsetWidth;
+    const barH = bar.offsetHeight;
+    bar.style.left = `${Math.max(0, Math.min(window.innerWidth - barW, barStartX + dx))}px`;
+    bar.style.top = `${Math.max(0, Math.min(window.innerHeight - barH, barStartY + dy))}px`;
+  }
+
+  function onDragEnd() {
+    isDragging = false;
+    bar.classList.remove("dragging");
+    document.removeEventListener("mousemove", onDragMove);
+    document.removeEventListener("mouseup", onDragEnd);
+    if (hasDragged) {
+      const rect = bar.getBoundingClientRect();
+      savePosition(rect.left, rect.top);
+      repositionPopover();
+      setTimeout(() => { hasDragged = false; }, 0);
     }
   }
-  function hideToast() {
-    if (toastTimer) clearTimeout(toastTimer);
-    toast.classList.remove("show");
-  }
+
+  bar.addEventListener("mousedown", onDragStart);
 
   // ── Settings Popover ──
+  const HIGHLIGHT_COLORS = [
+    { color: "#8b5cf6", name: "Purple" },
+    { color: "#3b82f6", name: "Blue" },
+    { color: "#06b6d4", name: "Cyan" },
+    { color: "#22c55e", name: "Green" },
+    { color: "#eab308", name: "Yellow" },
+    { color: "#f97316", name: "Orange" },
+    { color: "#ef4444", name: "Red" },
+  ];
+
   const settingsPop = document.createElement("div");
   settingsPop.className = "gf-popover";
   settingsPop.innerHTML = `
     <div class="gf-pop-header">
-      <h3>/ghostfill</h3>
-      <span class="gf-version">v0.1.0</span>
+      <h3><span class="gf-slash">/</span>ghostfill</h3>
+      <div class="gf-header-right">
+        <span class="gf-version">v0.1.0</span>
+        <button class="gf-theme-btn" id="gf-s-theme" title="Toggle theme">
+          ${saved.theme === "dark" ? ICONS.sun : ICONS.moon}
+        </button>
+      </div>
     </div>
     <div class="gf-pop-body">
       <div class="gf-field">
-        <label class="gf-label">API Key</label>
-        <input type="password" class="gf-input gf-input-mono" id="gf-s-key" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+        <label class="gf-label">Highlight Colour</label>
+        <div class="gf-colors" id="gf-s-colors">
+          ${HIGHLIGHT_COLORS.map((c) =>
+            `<div class="gf-color-dot${saved.highlightColor === c.color ? " selected" : ""}" data-color="${c.color}" style="background:${c.color}" title="${c.name}"></div>`
+          ).join("")}
+        </div>
       </div>
-      <div class="gf-field">
-        <label class="gf-label">Model</label>
-        <select class="gf-input" id="gf-s-model">
-          <option value="gpt-4o-mini">gpt-4o-mini</option>
-          <option value="gpt-4o">gpt-4o</option>
-          <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-          <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-          <option value="gpt-4.1">gpt-4.1</option>
-        </select>
+      <div class="gf-sep"></div>
+      <div class="gf-field" style="flex-direction:row;align-items:center;justify-content:space-between">
+        <label class="gf-label" style="margin:0">Use AI</label>
+        <label class="gf-toggle">
+          <input type="checkbox" id="gf-s-useai" ${saved.useAI ? "checked" : ""} />
+          <span class="gf-toggle-slider"></span>
+        </label>
       </div>
+      <div id="gf-s-ai-section" style="display:${saved.useAI ? "flex" : "none"};flex-direction:column;gap:12px">
+        <div class="gf-field" style="flex-direction:row;align-items:center;justify-content:space-between">
+          <div style="display:flex;align-items:center;gap:4px">
+            <label class="gf-label" style="margin:0">Provider</label>
+            <span class="gf-help" id="gf-s-help" title="">?</span>
+          </div>
+          <div class="gf-picker" id="gf-s-provider-picker">
+            <span class="gf-picker-value" id="gf-s-provider-label">${PROVIDERS[saved.provider]?.label || "OpenAI"}</span>
+          </div>
+        </div>
+        <div class="gf-field">
+          <label class="gf-label">API Key</label>
+          <input type="password" class="gf-input gf-input-mono" id="gf-s-key" placeholder="sk-..." autocomplete="off" spellcheck="false" />
+        </div>
+      </div>
+      <div class="gf-sep"></div>
       <div class="gf-field">
-        <label class="gf-label">Base URL <span style="color:#52525b">(optional)</span></label>
-        <input type="text" class="gf-input gf-input-mono" id="gf-s-url" placeholder="https://api.openai.com/v1" autocomplete="off" />
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <label class="gf-label" style="margin:0">Presets</label>
+          <button class="gf-preset-chip add" id="gf-s-preset-add" style="font-size:10px;padding:2px 6px">+ Add</button>
+        </div>
+        <div class="gf-preset-list" id="gf-s-preset-list"></div>
+        <div class="gf-preset-form" id="gf-s-preset-form" style="display:none">
+          <input class="gf-input" id="gf-s-preset-name" placeholder="Name (e.g. D365)" />
+          <textarea class="gf-input" id="gf-s-preset-prompt" placeholder="Prompt context..." rows="2" style="min-height:40px"></textarea>
+          <div class="gf-preset-form-actions">
+            <button class="gf-preset-form-btn cancel" id="gf-s-preset-cancel">Cancel</button>
+            <button class="gf-preset-form-btn save" id="gf-s-preset-save">Save</button>
+          </div>
+        </div>
       </div>
       <button class="gf-save-btn" id="gf-s-save">Save</button>
-      <span class="gf-saved" id="gf-s-saved">${ICONS.check} Saved</span>
     </div>
   `;
   shadow.appendChild(settingsPop);
 
   const sKeyInput = settingsPop.querySelector<HTMLInputElement>("#gf-s-key")!;
-  const sModelSelect = settingsPop.querySelector<HTMLSelectElement>("#gf-s-model")!;
-  const sUrlInput = settingsPop.querySelector<HTMLInputElement>("#gf-s-url")!;
+  const sUseAIToggle = settingsPop.querySelector<HTMLInputElement>("#gf-s-useai")!;
+  const sAISection = settingsPop.querySelector<HTMLDivElement>("#gf-s-ai-section")!;
+  const sHelpEl = settingsPop.querySelector<HTMLSpanElement>("#gf-s-help")!;
   const sSaveBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-save")!;
-  const sSavedEl = settingsPop.querySelector<HTMLSpanElement>("#gf-s-saved")!;
-
-  // Populate settings
+  const sThemeBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-theme")!;
+  const sColorsDiv = settingsPop.querySelector<HTMLDivElement>("#gf-s-colors")!;
+  const sPickerEl = settingsPop.querySelector<HTMLDivElement>("#gf-s-provider-picker")!;
+  const sPickerLabel = settingsPop.querySelector<HTMLSpanElement>("#gf-s-provider-label")!;
   sKeyInput.value = saved.apiKey;
-  sModelSelect.value = saved.model || "gpt-4o-mini";
-  sUrlInput.value = saved.baseURL || "";
+
+  // ── Provider picker — click to cycle ──
+  const providerOrder: Provider[] = ["openai", "xai", "moonshot"];
+  let selectedProvider: Provider = saved.provider || "openai";
+
+  function updateProviderDisplay() {
+    const p = PROVIDERS[selectedProvider] || PROVIDERS.openai;
+    sPickerLabel.textContent = `${p.label} (${p.model})`;
+    sHelpEl.title = p.helpText;
+  }
+  updateProviderDisplay();
+
+  sPickerEl.addEventListener("click", () => {
+    const idx = providerOrder.indexOf(selectedProvider);
+    selectedProvider = providerOrder[(idx + 1) % providerOrder.length]!;
+    updateProviderDisplay();
+  });
+
+  // Toggle AI section
+  sUseAIToggle.addEventListener("change", () => {
+    sAISection.style.display = sUseAIToggle.checked ? "flex" : "none";
+  });
+
+  // ── Highlight color selection ──
+  let currentHighlightColor = saved.highlightColor || "#6366f1";
+  sColorsDiv.addEventListener("click", (e) => {
+    const dot = (e.target as HTMLElement).closest(".gf-color-dot") as HTMLElement;
+    if (!dot) return;
+    sColorsDiv.querySelectorAll(".gf-color-dot").forEach((d) => d.classList.remove("selected"));
+    dot.classList.add("selected");
+    currentHighlightColor = dot.dataset.color || "#6366f1";
+  });
+
+  // ── Theme toggle ──
+  let currentTheme = saved.theme || "dark";
+
+  function applyTheme(theme: "dark" | "light") {
+    currentTheme = theme;
+    const isDark = theme === "dark";
+    sThemeBtn.innerHTML = isDark ? ICONS.sun : ICONS.moon;
+
+    const bg = isDark ? "#18181b" : "#ffffff";
+    const bgInput = isDark ? "#09090b" : "#f4f4f5";
+    const border = isDark ? "#27272a" : "#e4e4e7";
+    const text = isDark ? "#fafafa" : "#18181b";
+    const textMuted = isDark ? "#a1a1aa" : "#52525b";
+    const textDim = isDark ? "#52525b" : "#a1a1aa";
+    const btnHoverBg = isDark ? "#27272a" : "#f4f4f5";
+
+    for (const pop of [settingsPop, promptPop]) {
+      pop.style.background = bg;
+      pop.style.boxShadow = isDark
+        ? "0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)"
+        : "0 12px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.08)";
+      pop.querySelectorAll<HTMLElement>(".gf-pop-header h3").forEach((el) => el.style.color = text);
+      pop.querySelectorAll<HTMLElement>(".gf-label").forEach((el) => el.style.color = textMuted);
+      pop.querySelectorAll<HTMLElement>(".gf-input").forEach((el) => {
+        el.style.background = bgInput;
+        el.style.borderColor = border;
+        el.style.color = text;
+      });
+      pop.querySelectorAll<HTMLElement>(".gf-sep").forEach((el) => el.style.background = border);
+      pop.querySelectorAll<HTMLElement>(".gf-version").forEach((el) => el.style.color = textDim);
+      pop.querySelectorAll<HTMLElement>(".gf-field-count").forEach((el) => el.style.color = textMuted);
+      pop.querySelectorAll<HTMLElement>(".gf-fc-label").forEach((el) => el.style.color = isDark ? "#d4d4d8" : "#3f3f46");
+      pop.querySelectorAll<HTMLElement>(".gf-field-card").forEach((el) => {
+        el.style.background = isDark ? "#27272a" : "#f4f4f5";
+        el.style.borderColor = border;
+      });
+    }
+
+    bar.style.background = bg;
+    bar.style.boxShadow = isDark
+      ? "0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)"
+      : "0 8px 32px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.08)";
+    bar.querySelectorAll<HTMLElement>(".gf-bar-btn").forEach((btn) => {
+      btn.style.color = textMuted;
+      // Fix hover colors for light mode
+      btn.onmouseenter = () => { btn.style.background = btnHoverBg; btn.style.color = text; };
+      btn.onmouseleave = () => {
+        if (!btn.classList.contains("active")) { btn.style.background = "transparent"; btn.style.color = textMuted; }
+      };
+    });
+    bar.querySelectorAll<HTMLElement>(".gf-divider").forEach((el) => el.style.background = border);
+
+    fab.style.background = bg;
+    fab.style.color = textMuted;
+    fab.style.boxShadow = isDark
+      ? "0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)"
+      : "0 4px 16px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.08)";
+  }
+
+  if (currentTheme === "light") applyTheme("light");
+
+  sThemeBtn.addEventListener("click", () => {
+    applyTheme(currentTheme === "dark" ? "light" : "dark");
+  });
 
   // ── Prompt Popover ──
   const promptPop = document.createElement("div");
   promptPop.className = "gf-popover";
+  promptPop.style.width = "300px";
   promptPop.innerHTML = `
     <div class="gf-pop-header">
       <h3>Fill Fields</h3>
@@ -540,25 +778,105 @@ export function createOverlay(options: GhostFillOptions): {
     </div>
     <div class="gf-pop-body">
       <div id="gf-p-fields-wrap" style="display:none">
-        <ul class="gf-field-list" id="gf-p-list"></ul>
+        <div class="gf-fields-grid" id="gf-p-grid"></div>
       </div>
-      <div class="gf-field">
-        <textarea class="gf-input" id="gf-p-prompt" placeholder="Describe the data, e.g.&#10;'A US-based engineer named Sarah with gmail'" rows="3"></textarea>
+      <div class="gf-field" id="gf-p-preset-row" style="display:none;flex-direction:row;align-items:center;justify-content:space-between">
+        <label class="gf-label" style="margin:0">Preset</label>
+        <div class="gf-picker" id="gf-p-preset-picker">
+          <span class="gf-picker-value" id="gf-p-preset-label">None</span>
+        </div>
+      </div>
+      <div class="gf-field" id="gf-p-prompt-wrap">
+        <textarea class="gf-input" id="gf-p-prompt" placeholder="Optional: describe the data you want&#10;Leave empty for auto-generated data" rows="2"></textarea>
       </div>
       <button class="gf-fill-btn" id="gf-p-fill">
-        ${ICONS.fill} Fill with AI
+        ${ICONS.sparkles} Fill
       </button>
+      <div class="gf-status info" id="gf-p-status"></div>
     </div>
   `;
   shadow.appendChild(promptPop);
 
   const pCountEl = promptPop.querySelector<HTMLSpanElement>("#gf-p-count")!;
   const pFieldsWrap = promptPop.querySelector<HTMLDivElement>("#gf-p-fields-wrap")!;
-  const pFieldList = promptPop.querySelector<HTMLUListElement>("#gf-p-list")!;
+  const pFieldGrid = promptPop.querySelector<HTMLDivElement>("#gf-p-grid")!;
+  const pPresetRow = promptPop.querySelector<HTMLDivElement>("#gf-p-preset-row")!;
+  const pPresetPicker = promptPop.querySelector<HTMLDivElement>("#gf-p-preset-picker")!;
+  const pPresetLabel = promptPop.querySelector<HTMLSpanElement>("#gf-p-preset-label")!;
+  const pPromptWrap = promptPop.querySelector<HTMLDivElement>("#gf-p-prompt-wrap")!;
   const pPromptEl = promptPop.querySelector<HTMLTextAreaElement>("#gf-p-prompt")!;
   const pFillBtn = promptPop.querySelector<HTMLButtonElement>("#gf-p-fill")!;
+  const pStatusEl = promptPop.querySelector<HTMLDivElement>("#gf-p-status")!;
 
-  // ── Popover management ──
+  let presets: Preset[] = saved.presets || [];
+  let activePresetId: string | null = saved.activePresetId || null;
+
+  function updateFillPresetUI() {
+    if (presets.length === 0) {
+      pPresetRow.style.display = "none";
+      pPromptWrap.style.display = "flex";
+      activePresetId = null;
+      return;
+    }
+    pPresetRow.style.display = "flex";
+
+    // Find active preset
+    const active = activePresetId ? presets.find((p) => p.id === activePresetId) : null;
+    pPresetLabel.textContent = active ? active.name : "None";
+
+    // Hide prompt textarea when a preset is active
+    pPromptWrap.style.display = active ? "none" : "flex";
+  }
+
+  function persistActivePreset() {
+    const s = loadSettings();
+    s.activePresetId = activePresetId;
+    saveSettings(s);
+  }
+
+  // Click to cycle: None → preset1 → preset2 → ... → None
+  pPresetPicker.addEventListener("click", () => {
+    if (presets.length === 0) return;
+    if (!activePresetId) {
+      activePresetId = presets[0]!.id;
+    } else {
+      const idx = presets.findIndex((p) => p.id === activePresetId);
+      if (idx < presets.length - 1) {
+        activePresetId = presets[idx + 1]!.id;
+      } else {
+        activePresetId = null;
+      }
+    }
+    persistActivePreset();
+    updateFillPresetUI();
+  });
+
+  updateFillPresetUI();
+
+  function setStatus(text: string, type: "info" | "success" | "error") {
+    pStatusEl.textContent = text;
+    pStatusEl.className = `gf-status ${type}`;
+  }
+
+  function clearStatus() {
+    pStatusEl.textContent = "";
+    pStatusEl.className = "gf-status info";
+  }
+
+  // ── Popover positioning ──
+  function repositionPopover() {
+    const barRect = bar.getBoundingClientRect();
+    const popCenterX = barRect.left + barRect.width / 2;
+    const popBottom = barRect.top - 8;
+    for (const pop of [settingsPop, promptPop]) {
+      pop.style.position = "fixed";
+      pop.style.bottom = "";
+      pop.style.left = `${popCenterX}px`;
+      pop.style.top = `${popBottom}px`;
+      pop.style.transform = "translate(-50%, -100%)";
+    }
+  }
+
   type PopoverName = "settings" | "prompt" | null;
   let currentPopover: PopoverName = null;
 
@@ -566,14 +884,9 @@ export function createOverlay(options: GhostFillOptions): {
     settingsPop.classList.remove("open");
     promptPop.classList.remove("open");
     btnSettings.classList.remove("active");
-    btnEye.classList.remove("active");
     btnFill.classList.remove("active");
-
-    if (name === currentPopover || name === null) {
-      currentPopover = null;
-      return;
-    }
-
+    if (name === currentPopover || name === null) { currentPopover = null; return; }
+    repositionPopover();
     currentPopover = name;
     if (name === "settings") {
       settingsPop.classList.add("open");
@@ -594,18 +907,13 @@ export function createOverlay(options: GhostFillOptions): {
     blockHighlight = document.createElement("div");
     blockHighlight.id = "ghostfill-block-highlight";
     const rect = el.getBoundingClientRect();
+    const c = currentHighlightColor;
     Object.assign(blockHighlight.style, {
-      position: "fixed",
-      top: `${rect.top}px`,
-      left: `${rect.left}px`,
-      width: `${rect.width}px`,
-      height: `${rect.height}px`,
-      border: "2px solid #6366f1",
-      borderRadius: "6px",
-      backgroundColor: "rgba(99, 102, 241, 0.05)",
-      pointerEvents: "none",
-      zIndex: "2147483644",
-      transition: "all 0.2s",
+      position: "fixed", top: `${rect.top}px`, left: `${rect.left}px`,
+      width: `${rect.width}px`, height: `${rect.height}px`,
+      border: `2px solid ${c}`, borderRadius: "6px",
+      backgroundColor: `${c}0d`,
+      pointerEvents: "none", zIndex: "2147483644", transition: "all 0.2s",
     });
     document.body.appendChild(blockHighlight);
   }
@@ -615,34 +923,89 @@ export function createOverlay(options: GhostFillOptions): {
     blockHighlight = null;
   }
 
+  function fieldTypeIcon(type: string): string {
+    switch (type) {
+      case "email": return ICONS.ftEmail;
+      case "tel": return ICONS.ftPhone;
+      case "number": case "range": return ICONS.ftNumber;
+      case "date": case "datetime-local": case "time": case "month": case "week": return ICONS.ftDate;
+      case "select": return ICONS.ftSelect;
+      case "textarea": return ICONS.ftTextarea;
+      case "checkbox": return ICONS.ftCheckbox;
+      case "radio": return ICONS.ftRadio;
+      case "url": return ICONS.ftUrl;
+      case "password": return ICONS.ftPassword;
+      case "file": return ICONS.ftFile;
+      default: return ICONS.ftText;
+    }
+  }
+
+  // Track field highlight so we can remove it
+  let fieldHighlightEl: HTMLElement | null = null;
+  function highlightField(el: HTMLElement) {
+    clearFieldHighlight();
+    el.style.outline = `2px solid ${currentHighlightColor}`;
+    el.style.outlineOffset = "2px";
+    el.style.transition = "outline 0.15s, outline-offset 0.15s";
+    fieldHighlightEl = el;
+  }
+  function clearFieldHighlight() {
+    if (fieldHighlightEl) {
+      fieldHighlightEl.style.outline = "";
+      fieldHighlightEl.style.outlineOffset = "";
+      fieldHighlightEl = null;
+    }
+  }
+
   function showFieldsInPrompt(fields: DetectedField[]) {
     pCountEl.textContent = `${fields.length} field${fields.length === 1 ? "" : "s"}`;
-    pFieldList.innerHTML = "";
-    fields.forEach((f, i) => {
-      const li = document.createElement("li");
-      li.textContent = `${i + 1}. ${f.label} (${f.type})${f.required ? " *" : ""}`;
-      pFieldList.appendChild(li);
+    pFieldGrid.innerHTML = "";
+    fields.forEach((f) => {
+      const card = document.createElement("div");
+      card.className = "gf-field-card";
+
+      const icon = document.createElement("span");
+      icon.className = "gf-fc-icon";
+      icon.innerHTML = fieldTypeIcon(f.type);
+
+      const label = document.createElement("span");
+      label.className = "gf-fc-label";
+      label.textContent = f.label;
+
+      card.appendChild(icon);
+      card.appendChild(label);
+
+      if (f.required) {
+        const req = document.createElement("span");
+        req.className = "gf-fc-req";
+        req.textContent = "*";
+        card.appendChild(req);
+      }
+
+      // Hover → highlight the actual field on the page
+      card.addEventListener("mouseenter", () => highlightField(f.element));
+      card.addEventListener("mouseleave", () => clearFieldHighlight());
+
+      pFieldGrid.appendChild(card);
     });
     pFieldsWrap.style.display = "block";
   }
 
   let cleanupSelector: (() => void) | null = null;
 
-  // ── Button: Select Block ──
+  // ── Button: Select ──
   btnSelect.addEventListener("click", () => {
+    if (hasDragged) return;
     if (state.selecting) {
       cleanupSelector?.();
       cleanupSelector = null;
       state.selecting = false;
       btnSelect.classList.remove("active");
-      showToast("Selection cancelled", "info");
       return;
     }
-
-    openPopover(null); // close any popover
+    openPopover(null);
     state.selecting = true;
     btnSelect.classList.add("active");
-    showToast("Click on a form area to select it (Esc to cancel)", "selecting", 0);
 
     cleanupSelector = startSelection(
       (element) => {
@@ -650,134 +1013,257 @@ export function createOverlay(options: GhostFillOptions): {
         state.selectedBlock = element;
         btnSelect.classList.remove("active");
         cleanupSelector = null;
-
         const fields = detectFields(element);
         state.fields = fields;
-
         if (fields.length === 0) {
-          showToast("No fillable fields found — try a larger area", "error");
           badge.style.display = "none";
-          btnEye.disabled = true;
           btnFill.disabled = true;
           return;
         }
-
         highlightBlock(element);
         showFieldsInPrompt(fields);
         badge.textContent = String(fields.length);
         badge.style.display = "flex";
-        btnEye.disabled = false;
         btnFill.disabled = false;
-        showToast(`${fields.length} fields detected`, "success");
       },
       () => {
         state.selecting = false;
         btnSelect.classList.remove("active");
         cleanupSelector = null;
-        hideToast();
       },
-      host
+      host,
+      currentHighlightColor
     );
   });
 
-  // ── Button: Eye (view fields) ──
-  btnEye.addEventListener("click", () => {
-    if (state.fields.length === 0) return;
-    openPopover("prompt");
-  });
-
-  // ── Button: Fill (open prompt) ──
+  // ── Button: Fill ──
   btnFill.addEventListener("click", () => {
-    if (state.fields.length === 0) {
-      showToast("Select a block first", "info");
-      return;
-    }
+    if (hasDragged) return;
+    if (state.fields.length === 0) return;
     openPopover("prompt");
   });
 
   // ── Button: Settings ──
   btnSettings.addEventListener("click", () => {
+    if (hasDragged) return;
     openPopover("settings");
   });
 
-  // ── Button: Close ──
-  btnClose.addEventListener("click", () => {
-    bar.style.display = "none";
+  // ── Button: Close (minimize) ──
+  btnMinimize.addEventListener("click", () => {
+    if (hasDragged) return;
     openPopover(null);
-    hideToast();
     removeBlockHighlight();
     cleanupSelector?.();
+    state.selecting = false;
+    state.selectedBlock = null;
+    state.fields = [];
+    badge.style.display = "none";
+    btnFill.disabled = true;
+    positionFab();
+    bar.style.display = "none";
+    fab.classList.add("visible");
     state.active = false;
+  });
+
+  // ── FAB: drag + click ──
+  let fabDragState = { dragging: false, moved: false, startX: 0, startY: 0, fabX: 0, fabY: 0 };
+
+  function onFabMouseDown(e: MouseEvent) {
+    fabDragState = {
+      dragging: true, moved: false,
+      startX: e.clientX, startY: e.clientY,
+      fabX: fab.getBoundingClientRect().left,
+      fabY: fab.getBoundingClientRect().top,
+    };
+    const onMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - fabDragState.startX;
+      const dy = ev.clientY - fabDragState.startY;
+      if (!fabDragState.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) fabDragState.moved = true;
+      if (!fabDragState.moved) return;
+      fab.style.left = `${Math.max(0, Math.min(window.innerWidth - 44, fabDragState.fabX + dx))}px`;
+      fab.style.top = `${Math.max(0, Math.min(window.innerHeight - 44, fabDragState.fabY + dy))}px`;
+      fab.style.right = "";
+      fab.style.bottom = "";
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      fabDragState.dragging = false;
+      if (fabDragState.moved) {
+        localStorage.setItem(FAB_POS_KEY, JSON.stringify({ x: fab.getBoundingClientRect().left, y: fab.getBoundingClientRect().top }));
+      }
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
+  fab.addEventListener("mousedown", onFabMouseDown);
+
+  fab.addEventListener("click", () => {
+    if (fabDragState.moved) { fabDragState.moved = false; return; }
+    fab.classList.remove("visible");
+    bar.style.left = fab.style.left || `${window.innerWidth - 250}px`;
+    bar.style.top = fab.style.top || `${window.innerHeight - 80}px`;
+    bar.style.transform = "none";
+    bar.style.bottom = "";
+    bar.style.display = "flex";
+    state.active = true;
+    // Auto-start selection mode after a tick
+    setTimeout(() => btnSelect.click(), 50);
+  });
+
+  // ── Preset management ──
+  const sPresetList = settingsPop.querySelector<HTMLDivElement>("#gf-s-preset-list")!;
+  const sPresetForm = settingsPop.querySelector<HTMLDivElement>("#gf-s-preset-form")!;
+  const sPresetAddBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-preset-add")!;
+  const sPresetName = settingsPop.querySelector<HTMLInputElement>("#gf-s-preset-name")!;
+  const sPresetPrompt = settingsPop.querySelector<HTMLTextAreaElement>("#gf-s-preset-prompt")!;
+  const sPresetSaveBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-preset-save")!;
+  const sPresetCancelBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-preset-cancel")!;
+
+  let editingPresetId: string | null = null;
+
+  function renderPresetList() {
+    sPresetList.innerHTML = "";
+    presets.forEach((p) => {
+      const item = document.createElement("div");
+      item.className = "gf-preset-item";
+      const name = document.createElement("span");
+      name.className = "gf-preset-item-name";
+      name.textContent = p.name;
+      name.style.cursor = "pointer";
+      name.addEventListener("click", () => {
+        // Edit this preset
+        editingPresetId = p.id;
+        sPresetForm.style.display = "flex";
+        sPresetName.value = p.name;
+        sPresetPrompt.value = p.prompt;
+        sPresetName.focus();
+      });
+      const del = document.createElement("button");
+      del.className = "gf-preset-del";
+      del.innerHTML = "&times;";
+      del.addEventListener("click", () => {
+        presets = presets.filter((x) => x.id !== p.id);
+        if (activePresetId === p.id) activePresetId = null;
+        renderPresetList();
+        updateFillPresetUI();
+      });
+      item.append(name, del);
+      sPresetList.appendChild(item);
+    });
+  }
+  renderPresetList();
+
+  sPresetAddBtn.addEventListener("click", () => {
+    editingPresetId = null;
+    sPresetForm.style.display = "flex";
+    sPresetName.value = "";
+    sPresetPrompt.value = "";
+    sPresetName.focus();
+  });
+
+  sPresetCancelBtn.addEventListener("click", () => {
+    sPresetForm.style.display = "none";
+    editingPresetId = null;
+  });
+
+  sPresetSaveBtn.addEventListener("click", () => {
+    const name = sPresetName.value.trim();
+    const prompt = sPresetPrompt.value.trim();
+    if (!name || !prompt) return;
+    if (editingPresetId) {
+      // Update existing
+      const idx = presets.findIndex((p) => p.id === editingPresetId);
+      if (idx >= 0) presets[idx] = { ...presets[idx]!, name, prompt };
+    } else {
+      // Add new
+      presets.push({ id: Date.now().toString(36), name, prompt });
+    }
+    editingPresetId = null;
+    sPresetForm.style.display = "none";
+    renderPresetList();
+    updateFillPresetUI();
   });
 
   // ── Settings: Save ──
   sSaveBtn.addEventListener("click", () => {
     const s: GhostFillSettings = {
       apiKey: sKeyInput.value.trim(),
-      model: sModelSelect.value,
-      baseURL: sUrlInput.value.trim(),
+      provider: selectedProvider,
+      highlightColor: currentHighlightColor,
+      theme: currentTheme,
+      useAI: sUseAIToggle.checked,
+      presets,
+      activePresetId,
     };
     saveSettings(s);
-    dotWarn.style.display = s.apiKey ? "none" : "block";
-    sSavedEl.classList.add("show");
-    setTimeout(() => sSavedEl.classList.remove("show"), 2000);
+    dotWarn.style.display = (s.useAI && !s.apiKey) ? "block" : "none";
+    openPopover(null);
   });
 
   // ── Prompt: Fill ──
   async function doFill() {
-    const promptText = pPromptEl.value.trim();
-    if (!promptText) {
-      showToast("Enter a prompt first", "error");
-      pPromptEl.focus();
-      return;
-    }
-
     const settings = loadSettings();
-    if (!settings.apiKey) {
-      showToast("Set your API key in Settings first", "error");
-      openPopover("settings");
-      return;
-    }
+    // Build prompt: preset + user text
+    const activePreset = activePresetId
+      ? (settings.presets || []).find((p) => p.id === activePresetId)
+      : null;
+    const userText = pPromptEl.value.trim();
+    const promptText = [activePreset?.prompt, userText].filter(Boolean).join("\n\n");
 
-    if (state.fields.length === 0) {
-      showToast("No fields selected", "error");
-      return;
-    }
+    if (state.fields.length === 0) return;
 
     pFillBtn.disabled = true;
-    pFillBtn.innerHTML = `<span class="gf-spin">${ICONS.spinner}</span> Generating...`;
-    showToast("Calling AI...", "info", 0);
+    pFillBtn.innerHTML = `<span class="gf-spin">${ICONS.spinner}</span> Filling...`;
+    clearStatus();
 
     try {
-      const fillData = await generateFillData(state.fields, promptText, {
-        apiKey: settings.apiKey,
-        model: settings.model,
-        baseURL: settings.baseURL || undefined,
-        systemPrompt: options.systemPrompt,
-      });
-      const { filled, errors } = fillFields(state.fields, fillData);
+      let fillData;
+
+      if (settings.useAI) {
+        // AI mode
+        if (!settings.apiKey) {
+          setStatus("Set your API key in Settings first", "error");
+          pFillBtn.disabled = false;
+          pFillBtn.innerHTML = `${ICONS.sparkles} Fill`;
+          return;
+        }
+        const blockContext = state.selectedBlock
+          ? extractBlockContext(state.selectedBlock)
+          : "";
+        fillData = await generateFillData(
+          state.fields,
+          promptText,
+          settings,
+          options.systemPrompt,
+          blockContext
+        );
+      } else {
+        // Local faker mode — instant, no API call
+        fillData = generateFakeData(state.fields);
+      }
+
+      const { filled, errors } = await fillFields(state.fields, fillData);
 
       if (errors.length > 0) {
-        showToast(`Filled ${filled}/${state.fields.length} (${errors.length} error${errors.length > 1 ? "s" : ""})`, filled > 0 ? "success" : "error");
+        setStatus(`Filled ${filled}/${state.fields.length} fields`, filled > 0 ? "success" : "error");
       } else {
-        showToast(`Filled ${filled} field${filled === 1 ? "" : "s"}!`, "success");
-        openPopover(null);
+        setStatus(`Filled ${filled} field${filled === 1 ? "" : "s"}`, "success");
       }
+      removeBlockHighlight();
+      setTimeout(() => openPopover(null), 600);
     } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err), "error", 5000);
+      setStatus(cleanError(err), "error");
     } finally {
       pFillBtn.disabled = false;
-      pFillBtn.innerHTML = `${ICONS.fill} Fill with AI`;
+      pFillBtn.innerHTML = `${ICONS.sparkles} Fill`;
     }
   }
 
   pFillBtn.addEventListener("click", doFill);
-
   pPromptEl.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-      e.preventDefault();
-      doFill();
-    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); doFill(); }
   });
 
   // ── Keyboard shortcut ──
@@ -793,16 +1279,16 @@ export function createOverlay(options: GhostFillOptions): {
       (keys.includes("shift") ? e.shiftKey : !e.shiftKey) &&
       (keys.includes("meta") || keys.includes("cmd") ? e.metaKey : !e.metaKey) &&
       e.key.toLowerCase() === mainKey;
-
     if (match) {
       e.preventDefault();
       if (state.active) {
-        bar.style.display = "none";
         openPopover(null);
-        hideToast();
-        removeBlockHighlight();
+        positionFab();
+        bar.style.display = "none";
+        fab.classList.add("visible");
         state.active = false;
       } else {
+        fab.classList.remove("visible");
         bar.style.display = "flex";
         state.active = true;
       }
@@ -810,7 +1296,6 @@ export function createOverlay(options: GhostFillOptions): {
   }
   document.addEventListener("keydown", handleShortcut);
 
-  // ── Destroy ──
   function destroy() {
     cleanupSelector?.();
     removeBlockHighlight();
