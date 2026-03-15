@@ -209,20 +209,39 @@ const CSS = `
 
   .gf-fab {
     position: fixed; z-index: 2147483646;
-    width: 44px; height: 44px; border-radius: 50%; border: none;
-    background: #18181b; color: #a1a1aa; cursor: grab;
+    width: 48px; height: 48px; border-radius: 50%; border: none;
+    background: #18181b; color: #e4e4e7; cursor: grab;
     display: none; align-items: center; justify-content: center;
     pointer-events: auto;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
-    transition: transform 0.15s, color 0.15s;
+    box-shadow: 0 0 20px rgba(99,102,241,0.3), 0 0 40px rgba(99,102,241,0.1), 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(99,102,241,0.15);
+    transition: color 0.2s, box-shadow 0.3s;
   }
-  .gf-fab:hover { color: #a78bfa; }
-  .gf-fab:hover > svg { animation: gf-float 1.2s ease-in-out infinite; }
+  .gf-fab > svg {
+    filter: drop-shadow(0 0 4px rgba(99,102,241,0.5));
+    transition: transform 0.2s;
+  }
+  .gf-fab:hover {
+    color: #fff;
+    box-shadow: 0 0 30px rgba(99,102,241,0.5), 0 0 60px rgba(99,102,241,0.2), 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(99,102,241,0.3);
+  }
+  .gf-fab:hover > svg {
+    animation: gf-ghost-wobble 1.5s ease-in-out infinite;
+  }
   .gf-fab.visible { display: flex; }
-  @keyframes gf-float {
-    0%, 100% { transform: translateY(0) rotate(0deg); }
-    25% { transform: translateY(-2px) rotate(-5deg); }
-    75% { transform: translateY(1px) rotate(5deg); }
+
+  @keyframes gf-ghost-wobble {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    25% { transform: translate(1px, -2px) rotate(4deg); }
+    50% { transform: translate(0, -3px) rotate(-1deg); }
+    75% { transform: translate(-1px, -1px) rotate(-4deg); }
+  }
+
+  /* Success flash on filled block */
+  @keyframes gf-fill-success {
+    0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
+    30% { box-shadow: 0 0 0 6px rgba(99,102,241,0.2); }
+    60% { box-shadow: 0 0 0 12px rgba(52,211,153,0.15); }
+    100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
   }
 
   .gf-popover {
@@ -1477,8 +1496,34 @@ export function createOverlay(options: GhostFillOptions): {
       } else {
         setStatus(`Filled ${filled} field${filled === 1 ? "" : "s"}`, "success");
       }
+      // Success animation on the selected block
+      if (state.selectedBlock) {
+        const el = state.selectedBlock;
+        el.style.transition = "box-shadow 0.8s ease";
+        el.style.animation = "none";
+        // Create a temporary overlay for the ripple effect
+        const rect = el.getBoundingClientRect();
+        const ripple = document.createElement("div");
+        Object.assign(ripple.style, {
+          position: "fixed", top: `${rect.top}px`, left: `${rect.left}px`,
+          width: `${rect.width}px`, height: `${rect.height}px`,
+          borderRadius: "6px", pointerEvents: "none", zIndex: "2147483644",
+          border: "2px solid rgba(52,211,153,0.6)",
+          boxShadow: "0 0 0 0 rgba(52,211,153,0.4), inset 0 0 20px rgba(52,211,153,0.08)",
+          animation: "none",
+        });
+        document.body.appendChild(ripple);
+        // Animate
+        requestAnimationFrame(() => {
+          ripple.style.transition = "box-shadow 0.8s ease, border-color 0.8s ease, opacity 0.8s ease";
+          ripple.style.boxShadow = "0 0 0 8px rgba(52,211,153,0), inset 0 0 0 rgba(52,211,153,0)";
+          ripple.style.borderColor = "rgba(52,211,153,0)";
+          ripple.style.opacity = "0";
+        });
+        setTimeout(() => { ripple.remove(); }, 1000);
+      }
       removeBlockHighlight();
-      setTimeout(() => openPopover(null), 600);
+      setTimeout(() => openPopover(null), 800);
     } catch (err) {
       setStatus(cleanError(err), "error");
     } finally {

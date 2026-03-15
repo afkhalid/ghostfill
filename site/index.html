@@ -564,11 +564,15 @@
 
     .demo-reset-row {
       display: flex;
-      justify-content: flex-end;
-      margin-top: 4px;
+      justify-content: center;
+      align-items: center;
+      margin-top: 8px;
+      position: relative;
     }
 
     .demo-reset-btn {
+      position: absolute;
+      right: 0;
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -582,6 +586,33 @@
       font-family: var(--font-body);
       cursor: pointer;
       transition: all var(--transition);
+    }
+
+    .demo-ghost-btn {
+      width: 44px; height: 44px;
+      border-radius: 50%; border: none;
+      background: #18181b; color: #e4e4e7;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 20px rgba(99,102,241,0.35), 0 0 40px rgba(99,102,241,0.12), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.2);
+      transition: color 0.2s, box-shadow 0.3s, transform 0.2s;
+    }
+    .demo-ghost-btn svg {
+      filter: drop-shadow(0 0 4px rgba(99,102,241,0.5));
+    }
+    .demo-ghost-btn:hover {
+      color: #fff;
+      transform: scale(1.1);
+      box-shadow: 0 0 30px rgba(99,102,241,0.5), 0 0 60px rgba(99,102,241,0.2), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.3);
+    }
+    .demo-ghost-btn:hover svg {
+      animation: demoGhostWobble 1.5s ease-in-out infinite;
+    }
+    @keyframes demoGhostWobble {
+      0%, 100% { transform: translate(0, 0) rotate(0deg); }
+      25% { transform: translate(1px, -2px) rotate(4deg); }
+      50% { transform: translate(0, -3px) rotate(-1deg); }
+      75% { transform: translate(-1px, -1px) rotate(-4deg); }
     }
 
     .demo-reset-btn:hover {
@@ -1029,8 +1060,8 @@
       <ul class="nav-links" id="navLinks">
         <li><a href="#install">Install</a></li>
         <li><a href="#features">Features</a></li>
+        <li><a href="#demo">Demo</a></li>
         <li><a href="#settings">Settings</a></li>
-        <li><a href="#presets">Presets</a></li>
         <li><a href="#ai-mode">AI Mode</a></li>
       </ul>
 
@@ -1259,6 +1290,13 @@
             <textarea id="demo-notes" name="notes" placeholder="Any additional notes..." rows="3"></textarea>
           </div>
           <div class="demo-reset-row">
+            <button type="button" id="demoGhostBtn" class="demo-ghost-btn" title="Click to start GhostFill">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2C7.58 2 4 5.58 4 10v10l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V10c0-4.42-3.58-8-8-8z"/>
+                <circle cx="9" cy="10" r="1.5" fill="currentColor"/>
+                <circle cx="15" cy="10" r="1.5" fill="currentColor"/>
+              </svg>
+            </button>
             <button type="button" class="demo-reset-btn" onclick="document.getElementById('demoForm').reset();">
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h5M20 20v-5h-5M4 9a9 9 0 0115.3-6.36L20 4M20 15a9 9 0 01-15.3 6.36L4 20"/>
@@ -1531,8 +1569,38 @@
 
   <!-- Load GhostFill for the live demo -->
   <script type="module">
-    import { init } from "../dist/index.mjs";
-    init();
+    const paths = ["../dist/index.mjs", "/dist/index.mjs", "./dist/index.mjs"];
+    let gfLoaded = false;
+    for (const p of paths) {
+      try {
+        const m = await import(p);
+        m.init();
+        gfLoaded = true;
+
+        // Hide the default FAB — we use the demo button instead
+        setTimeout(() => {
+          const host = document.getElementById("ghostfill-root");
+          if (!host || !host.shadowRoot) return;
+          const fab = host.shadowRoot.querySelector(".gf-fab");
+          if (fab) fab.style.display = "none";
+        }, 300);
+
+        // Wire demo ghost button to trigger GhostFill
+        document.getElementById("demoGhostBtn").addEventListener("click", () => {
+          const host = document.getElementById("ghostfill-root");
+          if (!host || !host.shadowRoot) return;
+          const fab = host.shadowRoot.querySelector(".gf-fab");
+          if (fab) fab.click(); // triggers expand + selection mode
+        });
+
+        break;
+      } catch {}
+    }
+    if (!gfLoaded) {
+      // If ghostfill can't load, hide the demo button
+      const btn = document.getElementById("demoGhostBtn");
+      if (btn) btn.style.display = "none";
+    }
   </script>
 
   <!-- Three.js Ghost Hero (exact CodePen implementation) -->
@@ -1583,10 +1651,8 @@
         float gauss(float z,float u,float o){ return (1.0/(o*sqrt(6.2832)))*exp(-((z-u)*(z-u))/(2.0*o*o)); }
         void main(){
           vec2 uv=vUv; float t=uTime*1.8;
-          // Jitter
-          float jx=(rand(vec2(floor(t*60.0)))-0.5)*0.0012;
-          float jy=(rand(vec2(floor(t*30.0)+1.0))-0.5)*0.0004;
-          vec2 juv=uv+vec2(jx,jy);
+          // Jitter (disabled)
+          vec2 juv=uv;
           // VSync roll
           float vs=sin(t*2.0+uv.y*100.0)*0.015*step(0.95,rand(vec2(floor(t*4.0))));
           juv.y+=vs;
