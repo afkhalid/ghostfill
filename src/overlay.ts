@@ -1,6 +1,13 @@
-import type { GhostFillOptions, GhostFillState, GhostFillSettings, DetectedField, Provider, Preset } from "./types";
+import type {
+  DetectedField,
+  GhostFillOptions,
+  GhostFillState,
+  GhostFillSettings,
+  Preset,
+  Provider,
+} from "./types";
 import { PROVIDERS } from "./types";
-import { detectFields, extractBlockContext } from "./detector";
+import { detectFields, describeFields } from "./detector";
 import { generateFillData } from "./ai";
 import { generateFakeData } from "./faker";
 import { fillFields } from "./filler";
@@ -10,16 +17,69 @@ const STORAGE_KEY = "ghostfill_settings";
 const POS_KEY = "ghostfill_pos";
 const FAB_POS_KEY = "ghostfill_fab_pos";
 
-function loadSettings(): GhostFillSettings {
+function isProvider(value: unknown): value is Provider {
+  return value === "openai" || value === "xai" || value === "moonshot";
+}
+
+function defaultSettings(provider: Provider): GhostFillSettings {
+  return {
+    apiKey: "",
+    provider,
+    highlightColor: "#6366f1",
+    theme: "dark",
+    useAI: false,
+    presets: [],
+    activePresetId: null,
+  };
+}
+
+function sanitizePresets(value: unknown): Preset[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as { id?: unknown }).id === "string" &&
+      typeof (item as { name?: unknown }).name === "string" &&
+      typeof (item as { prompt?: unknown }).prompt === "string"
+    ) {
+      return [item as Preset];
+    }
+
+    return [];
+  });
+}
+
+function loadSettings(provider: Provider): GhostFillSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      return {
+        apiKey: typeof parsed.apiKey === "string" ? parsed.apiKey : "",
+        provider: isProvider(parsed.provider) ? parsed.provider : provider,
+        highlightColor:
+          typeof parsed.highlightColor === "string"
+            ? parsed.highlightColor
+            : "#6366f1",
+        theme: parsed.theme === "light" ? "light" : "dark",
+        useAI: parsed.useAI === true,
+        presets: sanitizePresets(parsed.presets),
+        activePresetId:
+          typeof parsed.activePresetId === "string"
+            ? parsed.activePresetId
+            : null,
+      };
+    }
   } catch {}
-  return { apiKey: "", provider: "openai" as const, highlightColor: "#6366f1", theme: "dark" as const, useAI: false, presets: [], activePresetId: null };
+  return defaultSettings(provider);
 }
 
 function saveSettings(s: GhostFillSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch {}
 }
 
 function loadPosition(): { x: number; y: number } | null {
@@ -31,17 +91,19 @@ function loadPosition(): { x: number; y: number } | null {
 }
 
 function savePosition(x: number, y: number) {
-  localStorage.setItem(POS_KEY, JSON.stringify({ x, y }));
+  try {
+    localStorage.setItem(POS_KEY, JSON.stringify({ x, y }));
+  } catch {}
 }
 
-/** Extract a clean error message from OpenAI API errors */
+/** Extract a clean error message from AI API errors */
 function cleanError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   // Try to extract the "message" field from JSON error bodies
   const match = raw.match(/"message"\s*:\s*"([^"]+)"/);
   if (match) return match[1];
-  // Strip "OpenAI API error (NNN): " prefix noise
-  const stripped = raw.replace(/^OpenAI API error \(\d+\):\s*/, "");
+  // Strip "AI API error (NNN): " prefix noise
+  const stripped = raw.replace(/^AI API error \(\d+\):\s*/, "");
   // If it's JSON, try to parse
   try {
     const parsed = JSON.parse(stripped);
@@ -112,7 +174,7 @@ const CSS = `
     align-items: center;
     gap: 2px;
     background: #18181b;
-    border-radius: 14px;
+    border-radius: 22px;
     padding: 5px 6px;
     box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06);
     user-select: none;
@@ -168,7 +230,7 @@ const CSS = `
     background: #1a1a1a; border-radius: 16px; pointer-events: auto;
     box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.08);
     display: none; flex-direction: column; overflow: hidden;
-    min-width: 280px;
+    width: 280px;
   }
   .gf-popover.open { display: flex; }
 
@@ -243,7 +305,7 @@ const CSS = `
     display: flex; align-items: center; justify-content: center; gap: 5px;
   }
   .gf-save-btn:hover, .gf-fill-btn:hover { background: #4f46e5; }
-  .gf-fill-btn:disabled { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.25); cursor: not-allowed; }
+  .gf-fill-btn:disabled { background: #6366f1; opacity: 0.5; cursor: not-allowed; }
 
   .gf-pop-body::-webkit-scrollbar { width: 6px; }
   .gf-pop-body::-webkit-scrollbar-track { background: transparent; }
@@ -376,6 +438,13 @@ const CSS = `
     padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.04);
   }
   .gf-preset-item-name { font-size: 12px; color: rgba(255,255,255,0.7); }
+  .gf-preset-actions { display: flex; align-items: center; gap: 2px; }
+  .gf-preset-edit {
+    background: none; border: none; color: rgba(255,255,255,0.25); cursor: pointer;
+    font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.15s;
+    display: flex; align-items: center;
+  }
+  .gf-preset-edit:hover { color: #6366f1; }
   .gf-preset-del {
     background: none; border: none; color: rgba(255,255,255,0.25); cursor: pointer;
     font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.15s;
@@ -396,12 +465,39 @@ const CSS = `
   .gf-preset-form-btn.cancel { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5); }
   .gf-preset-form-btn.cancel:hover { background: rgba(255,255,255,0.1); }
 
+  /* Cycle dots (vertical indicator like Agentation) */
+  .gf-cycle-dots {
+    display: flex; flex-direction: column; gap: 2px; margin-left: 4px;
+  }
+  .gf-cycle-dot {
+    width: 3px; height: 3px; border-radius: 50%;
+    background: rgba(255,255,255,0.2); transition: background 0.2s, transform 0.2s;
+    transform: scale(0.67);
+  }
+  .gf-cycle-dot.active { background: #fff; transform: scale(1); }
+
   /* Help badge */
   .gf-help {
+    position: relative;
     display: inline-flex; align-items: center; justify-content: center;
     width: 14px; height: 14px; border-radius: 50%;
     background: #3f3f46; color: #a1a1aa; font-size: 9px; font-weight: 700;
     cursor: help; flex-shrink: 0;
+  }
+  .gf-help-tip {
+    display: none; position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%); padding: 6px 10px;
+    background: #383838; color: rgba(255,255,255,0.7);
+    font-size: 11px; font-weight: 400; line-height: 1.4;
+    border-radius: 8px; white-space: normal; width: 180px; text-align: left;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3); z-index: 100;
+  }
+  .gf-help-tip.show { display: block; }
+
+  .gf-note {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    line-height: 1.5;
   }
 `;
 
@@ -411,13 +507,20 @@ export function createOverlay(options: GhostFillOptions): {
   state: GhostFillState;
   destroy: () => void;
 } {
-  const saved = loadSettings();
-  if (options.apiKey && !saved.apiKey) {
-    saved.apiKey = options.apiKey;
-    saveSettings(saved);
+  const aiConfig = options.ai || null;
+  const saved = loadSettings(aiConfig?.provider || "openai");
+
+  if (options.apiKey) {
+    console.warn(
+      "[ghostfill] Browser API keys are ignored. Configure init({ ai: ... }) and keep provider keys on your backend."
+    );
   }
-  if (options.model && !saved.model) saved.model = options.model;
-  if (options.baseURL && !saved.baseURL) saved.baseURL = options.baseURL;
+
+  const backendLabel = aiConfig
+    ? aiConfig.requestFillData
+      ? "Custom secure handler"
+      : aiConfig.endpoint || "/api/ghostfill"
+    : "Configure init({ ai: ... }) to enable AI.";
 
   const host = document.createElement("div");
   host.id = "ghostfill-root";
@@ -475,7 +578,7 @@ export function createOverlay(options: GhostFillOptions): {
   dotWarn.className = "gf-dot-warn";
   btnSettings.style.position = "relative";
   btnSettings.appendChild(dotWarn);
-  if (!saved.useAI || saved.apiKey) dotWarn.style.display = "none";
+  dotWarn.style.display = "none";
 
   const divider1 = document.createElement("span");
   divider1.className = "gf-divider";
@@ -600,7 +703,7 @@ export function createOverlay(options: GhostFillOptions): {
     <div class="gf-pop-header">
       <h3><span class="gf-slash">/</span>ghostfill</h3>
       <div class="gf-header-right">
-        <span class="gf-version">v0.1.0</span>
+        <span class="gf-version">v0.1.3</span>
         <button class="gf-theme-btn" id="gf-s-theme" title="Toggle theme">
           ${saved.theme === "dark" ? ICONS.sun : ICONS.moon}
         </button>
@@ -627,10 +730,15 @@ export function createOverlay(options: GhostFillOptions): {
         <div class="gf-field" style="flex-direction:row;align-items:center;justify-content:space-between">
           <div style="display:flex;align-items:center;gap:4px">
             <label class="gf-label" style="margin:0">Provider</label>
-            <span class="gf-help" id="gf-s-help" title="">?</span>
+            <span class="gf-help" id="gf-s-help">?<span class="gf-help-tip" id="gf-s-help-tip"></span></span>
           </div>
-          <div class="gf-picker" id="gf-s-provider-picker">
+          <div class="gf-picker" id="gf-s-provider-picker" tabindex="0">
             <span class="gf-picker-value" id="gf-s-provider-label">${PROVIDERS[saved.provider]?.label || "OpenAI"}</span>
+            <div class="gf-cycle-dots" id="gf-s-provider-dots">
+              <span class="gf-cycle-dot"></span>
+              <span class="gf-cycle-dot"></span>
+              <span class="gf-cycle-dot"></span>
+            </div>
           </div>
         </div>
         <div class="gf-field">
@@ -641,7 +749,10 @@ export function createOverlay(options: GhostFillOptions): {
       <div class="gf-sep"></div>
       <div class="gf-field">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <label class="gf-label" style="margin:0">Presets</label>
+          <div style="display:flex;align-items:center;gap:4px">
+            <label class="gf-label" style="margin:0">Presets</label>
+            <span class="gf-help" id="gf-s-presets-help">?<span class="gf-help-tip">Saved prompt templates that add context when filling. Select a preset in the Fill panel to use it automatically.</span></span>
+          </div>
           <button class="gf-preset-chip add" id="gf-s-preset-add" style="font-size:10px;padding:2px 6px">+ Add</button>
         </div>
         <div class="gf-preset-list" id="gf-s-preset-list"></div>
@@ -663,21 +774,32 @@ export function createOverlay(options: GhostFillOptions): {
   const sUseAIToggle = settingsPop.querySelector<HTMLInputElement>("#gf-s-useai")!;
   const sAISection = settingsPop.querySelector<HTMLDivElement>("#gf-s-ai-section")!;
   const sHelpEl = settingsPop.querySelector<HTMLSpanElement>("#gf-s-help")!;
+  sKeyInput.value = saved.apiKey || "";
   const sSaveBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-save")!;
   const sThemeBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-theme")!;
   const sColorsDiv = settingsPop.querySelector<HTMLDivElement>("#gf-s-colors")!;
   const sPickerEl = settingsPop.querySelector<HTMLDivElement>("#gf-s-provider-picker")!;
   const sPickerLabel = settingsPop.querySelector<HTMLSpanElement>("#gf-s-provider-label")!;
-  sKeyInput.value = saved.apiKey;
+  const sProviderDots = settingsPop.querySelector<HTMLDivElement>("#gf-s-provider-dots")!;
+  const sHelpTip = settingsPop.querySelector<HTMLSpanElement>("#gf-s-help-tip")!;
+  const sPresetsHelp = settingsPop.querySelector<HTMLSpanElement>("#gf-s-presets-help")!;
 
   // ── Provider picker — click to cycle ──
   const providerOrder: Provider[] = ["openai", "xai", "moonshot"];
-  let selectedProvider: Provider = saved.provider || "openai";
+  let selectedProvider: Provider = saved.provider || aiConfig?.provider || "openai";
+
+  function updateProviderDots() {
+    const idx = providerOrder.indexOf(selectedProvider);
+    sProviderDots.querySelectorAll(".gf-cycle-dot").forEach((dot, i) => {
+      dot.classList.toggle("active", i === idx);
+    });
+  }
 
   function updateProviderDisplay() {
     const p = PROVIDERS[selectedProvider] || PROVIDERS.openai;
     sPickerLabel.textContent = `${p.label} (${p.model})`;
-    sHelpEl.title = p.helpText;
+    sHelpTip.textContent = p.helpText;
+    updateProviderDots();
   }
   updateProviderDisplay();
 
@@ -685,6 +807,27 @@ export function createOverlay(options: GhostFillOptions): {
     const idx = providerOrder.indexOf(selectedProvider);
     selectedProvider = providerOrder[(idx + 1) % providerOrder.length]!;
     updateProviderDisplay();
+  });
+
+  // ── Help icons — toggle on click ──
+  sHelpEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sHelpTip.classList.toggle("show");
+  });
+  sPresetsHelp.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sPresetsHelp.querySelector(".gf-help-tip")!.classList.toggle("show");
+  });
+  // Close help tips when clicking elsewhere
+  shadow.addEventListener("click", () => {
+    sHelpTip.classList.remove("show");
+    sPresetsHelp.querySelector(".gf-help-tip")?.classList.remove("show");
+  });
+  sPickerEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      sPickerEl.click();
+    }
   });
 
   // Toggle AI section
@@ -710,21 +853,30 @@ export function createOverlay(options: GhostFillOptions): {
     const isDark = theme === "dark";
     sThemeBtn.innerHTML = isDark ? ICONS.sun : ICONS.moon;
 
-    const bg = isDark ? "#18181b" : "#ffffff";
-    const bgInput = isDark ? "#09090b" : "#f4f4f5";
-    const border = isDark ? "#27272a" : "#e4e4e7";
-    const text = isDark ? "#fafafa" : "#18181b";
-    const textMuted = isDark ? "#a1a1aa" : "#52525b";
-    const textDim = isDark ? "#52525b" : "#a1a1aa";
-    const btnHoverBg = isDark ? "#27272a" : "#f4f4f5";
+    const bg = isDark ? "#1a1a1a" : "#ffffff";
+    const bgInput = isDark ? "rgba(255,255,255,0.06)" : "#f4f4f5";
+    const border = isDark ? "rgba(255,255,255,0.07)" : "#d4d4d8";
+    const text = isDark ? "#fff" : "#18181b";
+    const textMuted = isDark ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)";
+    const textDim = isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.35)";
+    const btnHoverBg = isDark ? "#27272a" : "#e4e4e7";
+    const btnActiveBg = isDark ? "#3f3f46" : "#d4d4d8";
+    const presetItemBg = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
+    const presetItemText = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.7)";
+    const presetBtnColor = isDark ? "rgba(255,255,255,0.25)" : "rgba(0,0,0,0.25)";
+    const helpBg = isDark ? "#3f3f46" : "#d4d4d8";
+    const helpColor = isDark ? "#a1a1aa" : "#52525b";
+    const pickerColor = isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.75)";
 
     for (const pop of [settingsPop, promptPop]) {
       pop.style.background = bg;
       pop.style.boxShadow = isDark
-        ? "0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06)"
-        : "0 12px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.08)";
+        ? "0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.08)"
+        : "0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.08)";
       pop.querySelectorAll<HTMLElement>(".gf-pop-header h3").forEach((el) => el.style.color = text);
+      pop.querySelectorAll<HTMLElement>(".gf-pop-header").forEach((el) => el.style.borderBottomColor = border);
       pop.querySelectorAll<HTMLElement>(".gf-label").forEach((el) => el.style.color = textMuted);
+      pop.querySelectorAll<HTMLElement>(".gf-note").forEach((el) => el.style.color = textMuted);
       pop.querySelectorAll<HTMLElement>(".gf-input").forEach((el) => {
         el.style.background = bgInput;
         el.style.borderColor = border;
@@ -738,18 +890,32 @@ export function createOverlay(options: GhostFillOptions): {
         el.style.background = isDark ? "#27272a" : "#f4f4f5";
         el.style.borderColor = border;
       });
+      // Preset items
+      pop.querySelectorAll<HTMLElement>(".gf-preset-item").forEach((el) => el.style.background = presetItemBg);
+      pop.querySelectorAll<HTMLElement>(".gf-preset-item-name").forEach((el) => el.style.color = presetItemText);
+      pop.querySelectorAll<HTMLElement>(".gf-preset-del").forEach((el) => el.style.color = presetBtnColor);
+      pop.querySelectorAll<HTMLElement>(".gf-preset-edit").forEach((el) => el.style.color = presetBtnColor);
+      // Help badge
+      pop.querySelectorAll<HTMLElement>(".gf-help").forEach((el) => { el.style.background = helpBg; el.style.color = helpColor; });
+      // Picker value
+      pop.querySelectorAll<HTMLElement>(".gf-picker-value").forEach((el) => el.style.color = pickerColor);
+      // Theme button
+      pop.querySelectorAll<HTMLElement>(".gf-theme-btn").forEach((el) => el.style.color = textDim);
     }
 
     bar.style.background = bg;
     bar.style.boxShadow = isDark
       ? "0 8px 32px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)"
-      : "0 8px 32px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.08)";
+      : "0 4px 16px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06)";
     bar.querySelectorAll<HTMLElement>(".gf-bar-btn").forEach((btn) => {
       btn.style.color = textMuted;
-      // Fix hover colors for light mode
+      const isActive = btn.classList.contains("active");
+      btn.style.background = isActive ? btnActiveBg : "transparent";
       btn.onmouseenter = () => { btn.style.background = btnHoverBg; btn.style.color = text; };
       btn.onmouseleave = () => {
-        if (!btn.classList.contains("active")) { btn.style.background = "transparent"; btn.style.color = textMuted; }
+        const stillActive = btn.classList.contains("active");
+        btn.style.background = stillActive ? btnActiveBg : "transparent";
+        btn.style.color = stillActive ? text : textMuted;
       };
     });
     bar.querySelectorAll<HTMLElement>(".gf-divider").forEach((el) => el.style.background = border);
@@ -758,14 +924,8 @@ export function createOverlay(options: GhostFillOptions): {
     fab.style.color = textMuted;
     fab.style.boxShadow = isDark
       ? "0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)"
-      : "0 4px 16px rgba(0,0,0,0.1), 0 0 0 1px rgba(0,0,0,0.08)";
+      : "0 4px 12px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.06)";
   }
-
-  if (currentTheme === "light") applyTheme("light");
-
-  sThemeBtn.addEventListener("click", () => {
-    applyTheme(currentTheme === "dark" ? "light" : "dark");
-  });
 
   // ── Prompt Popover ──
   const promptPop = document.createElement("div");
@@ -784,6 +944,7 @@ export function createOverlay(options: GhostFillOptions): {
         <label class="gf-label" style="margin:0">Preset</label>
         <div class="gf-picker" id="gf-p-preset-picker">
           <span class="gf-picker-value" id="gf-p-preset-label">None</span>
+          <div class="gf-cycle-dots" id="gf-p-preset-dots"></div>
         </div>
       </div>
       <div class="gf-field" id="gf-p-prompt-wrap">
@@ -803,6 +964,7 @@ export function createOverlay(options: GhostFillOptions): {
   const pPresetRow = promptPop.querySelector<HTMLDivElement>("#gf-p-preset-row")!;
   const pPresetPicker = promptPop.querySelector<HTMLDivElement>("#gf-p-preset-picker")!;
   const pPresetLabel = promptPop.querySelector<HTMLSpanElement>("#gf-p-preset-label")!;
+  const pPresetDots = promptPop.querySelector<HTMLDivElement>("#gf-p-preset-dots")!;
   const pPromptWrap = promptPop.querySelector<HTMLDivElement>("#gf-p-prompt-wrap")!;
   const pPromptEl = promptPop.querySelector<HTMLTextAreaElement>("#gf-p-prompt")!;
   const pFillBtn = promptPop.querySelector<HTMLButtonElement>("#gf-p-fill")!;
@@ -824,12 +986,22 @@ export function createOverlay(options: GhostFillOptions): {
     const active = activePresetId ? presets.find((p) => p.id === activePresetId) : null;
     pPresetLabel.textContent = active ? active.name : "None";
 
+    // Render cycle dots: None + each preset
+    const totalOptions = presets.length + 1; // +1 for "None"
+    const activeIdx = activePresetId ? presets.findIndex((p) => p.id === activePresetId) + 1 : 0;
+    pPresetDots.innerHTML = "";
+    for (let i = 0; i < totalOptions; i++) {
+      const dot = document.createElement("span");
+      dot.className = `gf-cycle-dot${i === activeIdx ? " active" : ""}`;
+      pPresetDots.appendChild(dot);
+    }
+
     // Hide prompt textarea when a preset is active
     pPromptWrap.style.display = active ? "none" : "flex";
   }
 
   function persistActivePreset() {
-    const s = loadSettings();
+    const s = loadSettings(aiConfig?.provider || "openai");
     s.activePresetId = activePresetId;
     saveSettings(s);
   }
@@ -852,6 +1024,12 @@ export function createOverlay(options: GhostFillOptions): {
   });
 
   updateFillPresetUI();
+
+  if (currentTheme === "light") applyTheme("light");
+
+  sThemeBtn.addEventListener("click", () => {
+    applyTheme(currentTheme === "dark" ? "light" : "dark");
+  });
 
   function setStatus(text: string, type: "info" | "success" | "error") {
     pStatusEl.textContent = text;
@@ -891,7 +1069,7 @@ export function createOverlay(options: GhostFillOptions): {
     if (name === "settings") {
       settingsPop.classList.add("open");
       btnSettings.classList.add("active");
-      sKeyInput.focus();
+      (aiConfig && sUseAIToggle.checked ? sPickerEl : sSaveBtn).focus();
     } else if (name === "prompt") {
       promptPop.classList.add("open");
       btnFill.classList.add("active");
@@ -1025,6 +1203,8 @@ export function createOverlay(options: GhostFillOptions): {
         badge.textContent = String(fields.length);
         badge.style.display = "flex";
         btnFill.disabled = false;
+        // Auto-open fill popover
+        openPopover("prompt");
       },
       () => {
         state.selecting = false;
@@ -1091,7 +1271,15 @@ export function createOverlay(options: GhostFillOptions): {
       document.removeEventListener("mouseup", onUp);
       fabDragState.dragging = false;
       if (fabDragState.moved) {
-        localStorage.setItem(FAB_POS_KEY, JSON.stringify({ x: fab.getBoundingClientRect().left, y: fab.getBoundingClientRect().top }));
+        try {
+          localStorage.setItem(
+            FAB_POS_KEY,
+            JSON.stringify({
+              x: fab.getBoundingClientRect().left,
+              y: fab.getBoundingClientRect().top,
+            })
+          );
+        } catch {}
       }
     };
     document.addEventListener("mousemove", onMove);
@@ -1140,6 +1328,19 @@ export function createOverlay(options: GhostFillOptions): {
         sPresetPrompt.value = p.prompt;
         sPresetName.focus();
       });
+      const actions = document.createElement("div");
+      actions.className = "gf-preset-actions";
+      const edit = document.createElement("button");
+      edit.className = "gf-preset-edit";
+      edit.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg>';
+      edit.title = "Edit preset";
+      edit.addEventListener("click", () => {
+        editingPresetId = p.id;
+        sPresetForm.style.display = "flex";
+        sPresetName.value = p.name;
+        sPresetPrompt.value = p.prompt;
+        sPresetName.focus();
+      });
       const del = document.createElement("button");
       del.className = "gf-preset-del";
       del.innerHTML = "&times;";
@@ -1149,7 +1350,8 @@ export function createOverlay(options: GhostFillOptions): {
         renderPresetList();
         updateFillPresetUI();
       });
-      item.append(name, del);
+      actions.append(edit, del);
+      item.append(name, actions);
       sPresetList.appendChild(item);
     });
   }
@@ -1198,13 +1400,13 @@ export function createOverlay(options: GhostFillOptions): {
       activePresetId,
     };
     saveSettings(s);
-    dotWarn.style.display = (s.useAI && !s.apiKey) ? "block" : "none";
+    dotWarn.style.display = "none";
     openPopover(null);
   });
 
   // ── Prompt: Fill ──
   async function doFill() {
-    const settings = loadSettings();
+    const settings = loadSettings(aiConfig?.provider || "openai");
     // Build prompt: preset + user text
     const activePreset = activePresetId
       ? (settings.presets || []).find((p) => p.id === activePresetId)
@@ -1222,23 +1424,47 @@ export function createOverlay(options: GhostFillOptions): {
       let fillData;
 
       if (settings.useAI) {
-        // AI mode
         if (!settings.apiKey) {
           setStatus("Set your API key in Settings first", "error");
           pFillBtn.disabled = false;
           pFillBtn.innerHTML = `${ICONS.sparkles} Fill`;
           return;
         }
-        const blockContext = state.selectedBlock
-          ? extractBlockContext(state.selectedBlock)
-          : "";
-        fillData = await generateFillData(
-          state.fields,
-          promptText,
-          settings,
-          options.systemPrompt,
-          blockContext
-        );
+        // Call provider API directly with the user's API key
+        const provider = PROVIDERS[settings.provider] || PROVIDERS.openai;
+        // Extract page context inline
+        let blockContext = `Page: ${document.title}`;
+        if (state.selectedBlock) {
+          state.selectedBlock.querySelectorAll("h1,h2,h3,h4,label,legend").forEach((el) => {
+            const t = el.textContent?.trim();
+            if (t && t.length < 80) blockContext += `\n${t}`;
+          });
+        }
+        const fieldDesc = describeFields(state.fields);
+        let userContent = `Form fields:\n${fieldDesc}`;
+        if (blockContext) userContent += `\n\nPage context:\n${blockContext}`;
+        if (promptText) userContent += `\n\nUser instructions: ${promptText}`;
+        else userContent += `\n\nNo specific instructions — generate realistic, contextually appropriate data for all fields.`;
+
+        const resp = await fetch(`${provider.baseURL}/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${settings.apiKey}` },
+          body: JSON.stringify({
+            model: provider.model,
+            messages: [
+              { role: "system", content: `You are a form-filling assistant. Return ONLY a JSON object with a "fields" array of objects, each with "index" and "value" keys. Fill EVERY field. For select fields pick from listed options EXACTLY. For checkboxes add "checked" boolean. Generate coherent data. No markdown code blocks.` },
+              { role: "user", content: userContent },
+            ],
+            temperature: 0.7,
+            ...(settings.provider === "openai" ? { response_format: { type: "json_object" } } : {}),
+          }),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        const content = data.choices?.[0]?.message?.content || "";
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/) || [null, content];
+        const parsed = JSON.parse(jsonMatch[1]!.trim());
+        fillData = Array.isArray(parsed) ? parsed : parsed.fields || parsed.data || parsed.items || [];
       } else {
         // Local faker mode — instant, no API call
         fillData = generateFakeData(state.fields);
@@ -1295,6 +1521,14 @@ export function createOverlay(options: GhostFillOptions): {
     }
   }
   document.addEventListener("keydown", handleShortcut);
+
+  // Esc closes open popover
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && currentPopover) {
+      e.preventDefault();
+      openPopover(null);
+    }
+  });
 
   function destroy() {
     cleanupSelector?.();

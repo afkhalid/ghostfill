@@ -124,7 +124,7 @@ export function generateFakeData(fields: DetectedField[]): FieldFillData[] {
 
   return fields.map((field, index) => {
     if (field.type === "checkbox") {
-      return { index, value: "true", checked: Math.random() > 0.5 };
+      return { index, value: "true", checked: true };
     }
 
     const value = generateForField(field, context);

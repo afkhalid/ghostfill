@@ -1,6 +1,6 @@
 {
   "name": "ghostfill",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Dev tool that fills form fields with relevant sample data — select a block, click fill, done",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -10,6 +10,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs",
+      "require": "./dist/server.js"
     }
   },
   "files": [

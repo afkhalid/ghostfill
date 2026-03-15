@@ -1,10 +1,20 @@
-import type { GhostFillOptions } from "./types";
+import type { GhostFillAIOptions, GhostFillOptions, Provider } from "./types";
 import { createOverlay } from "./overlay";
 import { detectFields } from "./detector";
+import { generateFillData } from "./ai";
 import { generateFakeData } from "./faker";
 import { fillFields } from "./filler";
 
-export type { GhostFillOptions, DetectedField, FieldFillData } from "./types";
+export type {
+  GhostFillAIOptions,
+  GhostFillAIRequest,
+  GhostFillOptions,
+  GhostFillPromptField,
+  DetectedField,
+  FieldFillData,
+  Provider,
+} from "./types";
+export { PROVIDERS } from "./types";
 
 let instance: { destroy: () => void } | null = null;
 
@@ -39,6 +49,9 @@ export function init(options: GhostFillOptions = {}): { destroy: () => void } {
 export async function fill(params: {
   container: HTMLElement;
   prompt?: string;
+  ai?: GhostFillAIOptions;
+  provider?: Provider;
+  systemPrompt?: string;
 }): Promise<{ filled: number; errors: string[] }> {
   const fields = detectFields(params.container);
 
@@ -46,6 +59,15 @@ export async function fill(params: {
     return { filled: 0, errors: ["No fillable fields found in container"] };
   }
 
-  const fillData = generateFakeData(fields);
+  const fillData = params.ai
+    ? await generateFillData(
+        fields,
+        params.prompt || "",
+        params.provider || params.ai.provider || "openai",
+        params.ai,
+        params.systemPrompt
+      )
+    : generateFakeData(fields);
+
   return fillFields(fields, fillData);
 }

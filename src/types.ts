@@ -1,11 +1,16 @@
 /** Configuration options for GhostFill */
 export interface GhostFillOptions {
-  /** API key (optional — can be set via settings UI) */
+  /**
+   * @deprecated Browser API keys are insecure and ignored.
+   * Configure `ai` and keep provider credentials on your backend instead.
+   */
   apiKey?: string;
   /** Keyboard shortcut to toggle GhostFill (default: "Alt+G") */
   shortcut?: string;
   /** Custom system prompt to prepend */
   systemPrompt?: string;
+  /** Secure AI transport configuration */
+  ai?: GhostFillAIOptions;
 }
 
 export type Provider = "openai" | "xai" | "moonshot";
@@ -15,6 +20,41 @@ export const PROVIDERS: Record<Provider, { label: string; model: string; baseURL
   xai: { label: "xAI", model: "grok-4-fast", baseURL: "https://api.x.ai/v1", helpText: "Uses Grok 4 Fast" },
   moonshot: { label: "Moonshot", model: "kimi-k2", baseURL: "https://api.moonshot.ai/v1", helpText: "Uses Kimi K2 — fast & cheap" },
 };
+
+/** Non-secret field metadata sent to an AI backend */
+export interface GhostFillPromptField {
+  index: number;
+  type: string;
+  name: string;
+  label: string;
+  options?: string[];
+  required: boolean;
+  min?: string;
+  max?: string;
+  pattern?: string;
+}
+
+/** Secure AI request payload for a backend route or callback */
+export interface GhostFillAIRequest {
+  provider: Provider;
+  prompt: string;
+  systemPrompt?: string;
+  fields: GhostFillPromptField[];
+}
+
+export type GhostFillAIHandler = (
+  request: GhostFillAIRequest
+) => Promise<FieldFillData[]>;
+
+/** Secure AI configuration. Requests must go through a backend or custom handler. */
+export interface GhostFillAIOptions {
+  /** Same-origin backend route. Defaults to `/api/ghostfill` when `ai` is enabled. */
+  endpoint?: string;
+  /** Optional custom transport that forwards requests to a secure backend. */
+  requestFillData?: GhostFillAIHandler;
+  /** Default provider shown in the UI. */
+  provider?: Provider;
+}
 
 /** A saved prompt preset */
 export interface Preset {

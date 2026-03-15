@@ -1,4 +1,4 @@
-import type { DetectedField } from "./types";
+import type { DetectedField, GhostFillPromptField } from "./types";
 
 const INPUT_SELECTORS = [
   "input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=reset]):not([type=image])",
@@ -174,7 +174,14 @@ export function detectFields(container: HTMLElement): DetectedField[] {
 }
 
 /** Build a description of fields for the AI prompt */
-export function describeFields(fields: DetectedField[]): string {
+export function describeFields(
+  fields: Array<
+    Pick<
+      DetectedField | GhostFillPromptField,
+      "type" | "label" | "required" | "options" | "min" | "max" | "pattern"
+    >
+  >
+): string {
   return fields
     .map((f, i) => {
       let desc = `[${i}] "${f.label}" (type: ${f.type}`;
@@ -183,59 +190,8 @@ export function describeFields(fields: DetectedField[]): string {
       if (f.min) desc += `, min: ${f.min}`;
       if (f.max) desc += `, max: ${f.max}`;
       if (f.pattern) desc += `, pattern: ${f.pattern}`;
-      if (f.currentValue) desc += `, current: "${f.currentValue}"`;
       desc += ")";
       return desc;
     })
     .join("\n");
-}
-
-/** Extract visible text context from the selected block (headings, labels, paragraphs) */
-export function extractBlockContext(container: HTMLElement): string {
-  const parts: string[] = [];
-
-  // Page title
-  const pageTitle = document.title;
-  if (pageTitle) parts.push(`Page: ${pageTitle}`);
-
-  // Headings in/above the block
-  const headings = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
-  headings.forEach((h) => {
-    const text = h.textContent?.trim();
-    if (text) parts.push(`Heading: ${text}`);
-  });
-
-  // If no headings in container, look for the nearest heading above
-  if (headings.length === 0) {
-    let prev: Element | null = container;
-    while (prev) {
-      prev = prev.previousElementSibling;
-      if (prev && /^H[1-6]$/.test(prev.tagName)) {
-        const text = prev.textContent?.trim();
-        if (text) parts.push(`Section: ${text}`);
-        break;
-      }
-    }
-    // Also check parent headings
-    const parent = container.closest("section, article, form, div[class]");
-    if (parent) {
-      const parentH = parent.querySelector("h1, h2, h3, h4, h5, h6");
-      if (parentH?.textContent?.trim()) {
-        parts.push(`Section: ${parentH.textContent.trim()}`);
-      }
-    }
-  }
-
-  // Labels and visible text (capped)
-  const labels = container.querySelectorAll("label, legend, .label, p, span");
-  const seen = new Set<string>();
-  labels.forEach((el) => {
-    const text = el.textContent?.trim();
-    if (text && text.length > 2 && text.length < 100 && !seen.has(text)) {
-      seen.add(text);
-      parts.push(text);
-    }
-  });
-
-  return parts.slice(0, 20).join("\n");
 }
