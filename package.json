@@ -1,7 +1,7 @@
 {
   "name": "ghostfill",
-  "version": "0.1.1",
-  "description": "AI-powered form filler — select a block, detect fields, fill with AI-generated data",
+  "version": "0.1.2",
+  "description": "Dev tool that fills form fields with relevant sample data — select a block, click fill, done",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",

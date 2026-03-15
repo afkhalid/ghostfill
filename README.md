@@ -1,6 +1,6 @@
 # GhostFill
 
-Dev tool that fills form fields with fake data. Select a block, click fill — done.
+Dev tool that fills form fields with sample data. Select a block, click fill — done.
 
 Works with any framework (React, Vue, Angular, vanilla). Detects inputs, textareas, selects, checkboxes, radios, date pickers, and custom dropdowns (Headless UI, Radix).
 
@@ -50,7 +50,7 @@ await fill({ container: document.querySelector("form") });
 1. A ghost icon appears on the page (starts minimized)
 2. Click it to enter selection mode — hover and click a form area
 3. Click the sparkles button to fill all detected fields
-4. By default, generates random fake data locally (no API needed)
+4. By default, generates random sample data locally (no API needed)
 5. Optionally enable AI mode in settings for context-aware data generation
 
 ## Settings
@@ -66,7 +66,7 @@ Click the gear icon to configure:
 
 ## Features
 
-- **Zero config** — works out of the box with random fake data
+- **Zero config** — works out of the box with random sample data
 - **Shadow DOM** — styles don't leak into your app
 - **Framework-aware** — uses native value setters so React/Vue/Angular pick up changes
 - **Smart detection** — labels from `<label>`, `aria-label`, placeholder, preceding siblings
