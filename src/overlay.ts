@@ -188,7 +188,7 @@ const CSS = `
     width: 36px;
     height: 36px;
     border: none;
-    border-radius: 10px;
+    border-radius: 50%;
     background: transparent;
     color: #a1a1aa;
     cursor: pointer;
@@ -450,33 +450,42 @@ const CSS = `
   }
   .gf-preset-chip.add:hover { color: rgba(255,255,255,0.6); border-color: rgba(255,255,255,0.3); }
 
-  /* Preset list in settings */
-  .gf-preset-list { display: flex; flex-direction: column; gap: 4px; }
-  .gf-preset-item {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,0.04);
+  /* Preset pills in settings */
+  .gf-preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .gf-preset-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    border: 1px solid; transition: all 0.15s;
   }
-  .gf-preset-item-name { font-size: 12px; color: rgba(255,255,255,0.7); }
-  .gf-preset-actions { display: flex; align-items: center; gap: 2px; }
-  .gf-preset-edit {
-    background: none; border: none; color: rgba(255,255,255,0.25); cursor: pointer;
-    font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.15s;
-    display: flex; align-items: center;
+  .gf-preset-pill .gf-pp-name {
+    cursor: pointer; transition: opacity 0.15s;
   }
-  .gf-preset-edit:hover { color: #6366f1; }
-  .gf-preset-del {
-    background: none; border: none; color: rgba(255,255,255,0.25); cursor: pointer;
-    font-size: 14px; padding: 0 2px; line-height: 1; transition: color 0.15s;
+  .gf-preset-pill .gf-pp-name:hover { opacity: 0.7; }
+  .gf-preset-pill .gf-pp-x {
+    background: none; border: none; cursor: pointer;
+    font-size: 13px; line-height: 1; opacity: 0.4; transition: opacity 0.15s, color 0.15s;
+    padding: 0; margin-left: 2px; font-family: inherit;
   }
-  .gf-preset-del:hover { color: #f87171; }
+  .gf-preset-pill .gf-pp-x:hover { opacity: 1; color: #f87171; }
 
-  /* Preset add form */
-  .gf-preset-form { display: flex; flex-direction: column; gap: 6px; }
-  .gf-preset-form-row { display: flex; gap: 4px; }
-  .gf-preset-form-row .gf-input { flex: 1; }
-  .gf-preset-form-actions { display: flex; gap: 4px; justify-content: flex-end; }
+  /* Preset edit overlay — takes over the entire settings panel */
+  .gf-preset-overlay {
+    position: absolute; inset: 0;
+    background: #1a1a1a; border-radius: 16px;
+    display: none; flex-direction: column;
+    z-index: 5;
+  }
+  .gf-preset-overlay[style*="display: flex"], .gf-preset-overlay[style*="display:flex"] {
+    display: flex;
+  }
+  .gf-preset-overlay-body {
+    flex: 1; display: flex; flex-direction: column;
+    padding: 0 16px 16px; gap: 10px; overflow-y: auto;
+  }
+  .gf-preset-form-actions { display: flex; gap: 6px; justify-content: flex-end; }
   .gf-preset-form-btn {
-    padding: 3px 10px; border: none; border-radius: 6px; font-size: 11px;
+    padding: 6px 14px; border: none; border-radius: 8px; font-size: 12px; font-weight: 500;
     cursor: pointer; font-family: inherit; transition: background 0.15s;
   }
   .gf-preset-form-btn.save { background: #6366f1; color: white; }
@@ -718,11 +727,12 @@ export function createOverlay(options: GhostFillOptions): {
 
   const settingsPop = document.createElement("div");
   settingsPop.className = "gf-popover";
+  settingsPop.style.position = "fixed"; // needed for preset overlay absolute positioning
   settingsPop.innerHTML = `
     <div class="gf-pop-header">
       <h3><span class="gf-slash">/</span>ghostfill</h3>
       <div class="gf-header-right">
-        <span class="gf-version">v0.1.3</span>
+        <span class="gf-version">v0.2.1</span>
         <button class="gf-theme-btn" id="gf-s-theme" title="Toggle theme">
           ${saved.theme === "dark" ? ICONS.sun : ICONS.moon}
         </button>
@@ -764,27 +774,39 @@ export function createOverlay(options: GhostFillOptions): {
           <label class="gf-label">API Key</label>
           <input type="password" class="gf-input gf-input-mono" id="gf-s-key" placeholder="sk-..." autocomplete="off" spellcheck="false" />
         </div>
-      </div>
-      <div class="gf-sep"></div>
-      <div class="gf-field">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div style="display:flex;align-items:center;gap:4px">
-            <label class="gf-label" style="margin:0">Presets</label>
-            <span class="gf-help" id="gf-s-presets-help">?<span class="gf-help-tip">Saved prompt templates that add context when filling. Select a preset in the Fill panel to use it automatically.</span></span>
+        <div class="gf-sep"></div>
+        <div class="gf-field">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="display:flex;align-items:center;gap:4px">
+              <label class="gf-label" style="margin:0">Presets</label>
+              <span class="gf-help" id="gf-s-presets-help">?<span class="gf-help-tip">Saved prompt templates that add context when filling. Select a preset in the Fill panel to use it automatically.</span></span>
+            </div>
+            <button class="gf-preset-chip add" id="gf-s-preset-add" style="font-size:10px;padding:2px 6px">+ Add</button>
           </div>
-          <button class="gf-preset-chip add" id="gf-s-preset-add" style="font-size:10px;padding:2px 6px">+ Add</button>
-        </div>
-        <div class="gf-preset-list" id="gf-s-preset-list"></div>
-        <div class="gf-preset-form" id="gf-s-preset-form" style="display:none">
-          <input class="gf-input" id="gf-s-preset-name" placeholder="Name (e.g. D365)" />
-          <textarea class="gf-input" id="gf-s-preset-prompt" placeholder="Prompt context..." rows="2" style="min-height:40px"></textarea>
-          <div class="gf-preset-form-actions">
-            <button class="gf-preset-form-btn cancel" id="gf-s-preset-cancel">Cancel</button>
-            <button class="gf-preset-form-btn save" id="gf-s-preset-save">Save</button>
-          </div>
+          <div class="gf-preset-list" id="gf-s-preset-list"></div>
         </div>
       </div>
       <button class="gf-save-btn" id="gf-s-save">Save</button>
+    </div>
+    <!-- Preset edit overlay — takes over entire panel -->
+    <div class="gf-preset-overlay" id="gf-s-preset-form" style="display:none">
+      <div class="gf-pop-header">
+        <h3 id="gf-s-preset-form-title">New Preset</h3>
+      </div>
+      <div class="gf-preset-overlay-body">
+        <div class="gf-field">
+          <label class="gf-label">Name</label>
+          <input class="gf-input" id="gf-s-preset-name" placeholder="e.g. D365, Healthcare, E-commerce" />
+        </div>
+        <div class="gf-field" style="flex:1;display:flex;flex-direction:column">
+          <label class="gf-label">Prompt</label>
+          <textarea class="gf-input" id="gf-s-preset-prompt" placeholder="Describe the context for this preset...&#10;&#10;e.g. Generate data for a Microsoft Dynamics 365 Customer Engagement implementation. Use CRM terminology, consulting project names, and Microsoft partner context." style="flex:1;min-height:120px;resize:none"></textarea>
+        </div>
+        <div class="gf-preset-form-actions">
+          <button class="gf-preset-form-btn cancel" id="gf-s-preset-cancel">Cancel</button>
+          <button class="gf-preset-form-btn save" id="gf-s-preset-save">Save Preset</button>
+        </div>
+      </div>
     </div>
   `;
   shadow.appendChild(settingsPop);
@@ -909,11 +931,7 @@ export function createOverlay(options: GhostFillOptions): {
         el.style.background = isDark ? "#27272a" : "#f4f4f5";
         el.style.borderColor = border;
       });
-      // Preset items
-      pop.querySelectorAll<HTMLElement>(".gf-preset-item").forEach((el) => el.style.background = presetItemBg);
-      pop.querySelectorAll<HTMLElement>(".gf-preset-item-name").forEach((el) => el.style.color = presetItemText);
-      pop.querySelectorAll<HTMLElement>(".gf-preset-del").forEach((el) => el.style.color = presetBtnColor);
-      pop.querySelectorAll<HTMLElement>(".gf-preset-edit").forEach((el) => el.style.color = presetBtnColor);
+      // Preset pills — colors are inline, no theme override needed
       // Help badge
       pop.querySelectorAll<HTMLElement>(".gf-help").forEach((el) => { el.style.background = helpBg; el.style.color = helpColor; });
       // Picker value
@@ -1322,6 +1340,7 @@ export function createOverlay(options: GhostFillOptions): {
   // ── Preset management ──
   const sPresetList = settingsPop.querySelector<HTMLDivElement>("#gf-s-preset-list")!;
   const sPresetForm = settingsPop.querySelector<HTMLDivElement>("#gf-s-preset-form")!;
+  const sPresetFormTitle = settingsPop.querySelector<HTMLHeadingElement>("#gf-s-preset-form-title")!;
   const sPresetAddBtn = settingsPop.querySelector<HTMLButtonElement>("#gf-s-preset-add")!;
   const sPresetName = settingsPop.querySelector<HTMLInputElement>("#gf-s-preset-name")!;
   const sPresetPrompt = settingsPop.querySelector<HTMLTextAreaElement>("#gf-s-preset-prompt")!;
@@ -1330,54 +1349,66 @@ export function createOverlay(options: GhostFillOptions): {
 
   let editingPresetId: string | null = null;
 
+  // Preset pill colors — cycle through these
+  const PILL_COLORS = [
+    { bg: "rgba(99,102,241,0.15)", border: "rgba(99,102,241,0.3)", text: "#a5b4fc" },
+    { bg: "rgba(52,211,153,0.12)", border: "rgba(52,211,153,0.25)", text: "#6ee7b7" },
+    { bg: "rgba(251,146,60,0.12)", border: "rgba(251,146,60,0.25)", text: "#fdba74" },
+    { bg: "rgba(244,114,182,0.12)", border: "rgba(244,114,182,0.25)", text: "#f9a8d4" },
+    { bg: "rgba(56,189,248,0.12)", border: "rgba(56,189,248,0.25)", text: "#7dd3fc" },
+    { bg: "rgba(163,130,255,0.12)", border: "rgba(163,130,255,0.25)", text: "#c4b5fd" },
+    { bg: "rgba(250,204,21,0.12)", border: "rgba(250,204,21,0.25)", text: "#fde68a" },
+  ];
+
   function renderPresetList() {
     sPresetList.innerHTML = "";
-    presets.forEach((p) => {
-      const item = document.createElement("div");
-      item.className = "gf-preset-item";
+    presets.forEach((p, i) => {
+      const c = PILL_COLORS[i % PILL_COLORS.length]!;
+      const pill = document.createElement("span");
+      pill.className = "gf-preset-pill";
+      pill.style.background = c.bg;
+      pill.style.borderColor = c.border;
+      pill.style.color = c.text;
+
       const name = document.createElement("span");
-      name.className = "gf-preset-item-name";
+      name.className = "gf-pp-name";
       name.textContent = p.name;
-      name.style.cursor = "pointer";
+      name.title = "Click to edit";
       name.addEventListener("click", () => {
-        // Edit this preset
         editingPresetId = p.id;
+        sPresetFormTitle.textContent = "Edit Preset";
         sPresetForm.style.display = "flex";
         sPresetName.value = p.name;
         sPresetPrompt.value = p.prompt;
         sPresetName.focus();
       });
-      const actions = document.createElement("div");
-      actions.className = "gf-preset-actions";
-      const edit = document.createElement("button");
-      edit.className = "gf-preset-edit";
-      edit.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.85 0 114 4L7.5 20.5 2 22l1.5-5.5z"/></svg>';
-      edit.title = "Edit preset";
-      edit.addEventListener("click", () => {
-        editingPresetId = p.id;
-        sPresetForm.style.display = "flex";
-        sPresetName.value = p.name;
-        sPresetPrompt.value = p.prompt;
-        sPresetName.focus();
-      });
-      const del = document.createElement("button");
-      del.className = "gf-preset-del";
-      del.innerHTML = "&times;";
-      del.addEventListener("click", () => {
-        presets = presets.filter((x) => x.id !== p.id);
+
+      const x = document.createElement("button");
+      x.className = "gf-pp-x";
+      x.innerHTML = "&times;";
+      x.style.color = c.text;
+      x.title = "Delete";
+      x.addEventListener("click", (e) => {
+        e.stopPropagation();
+        presets = presets.filter((v) => v.id !== p.id);
         if (activePresetId === p.id) activePresetId = null;
         renderPresetList();
         updateFillPresetUI();
+        const s = loadSettings(aiConfig?.provider || "openai");
+        s.presets = presets;
+        s.activePresetId = activePresetId;
+        saveSettings(s);
       });
-      actions.append(edit, del);
-      item.append(name, actions);
-      sPresetList.appendChild(item);
+
+      pill.append(name, x);
+      sPresetList.appendChild(pill);
     });
   }
   renderPresetList();
 
   sPresetAddBtn.addEventListener("click", () => {
     editingPresetId = null;
+    sPresetFormTitle.textContent = "New Preset";
     sPresetForm.style.display = "flex";
     sPresetName.value = "";
     sPresetPrompt.value = "";
@@ -1567,11 +1598,17 @@ export function createOverlay(options: GhostFillOptions): {
   }
   document.addEventListener("keydown", handleShortcut);
 
-  // Esc closes open popover
+  // Esc: close popover first, then minimize bar
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && currentPopover) {
+    if (e.key !== "Escape") return;
+    if (currentPopover) {
       e.preventDefault();
       openPopover(null);
+      return;
+    }
+    if (state.active) {
+      e.preventDefault();
+      btnMinimize.click();
     }
   });
 

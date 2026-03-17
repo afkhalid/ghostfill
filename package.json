@@ -1,7 +1,7 @@
 {
-  "name": "ghostfill",
-  "version": "0.1.3",
-  "description": "Dev tool that fills form fields with relevant sample data — select a block, click fill, done",
+  "name": "@afkhalid/ghostfill",
+  "version": "0.2.1",
+  "description": "Stop demoing with test123. Realistic, domain-aware form data in one click.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -39,11 +39,14 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/afkhalid/ghostfill.git"
+    "url": "git+https://github.com/AhmedFathyDev/ghostfill.git"
   },
-  "homepage": "https://github.com/afkhalid/ghostfill#readme",
+  "homepage": "https://github.com/AhmedFathyDev/ghostfill#readme",
   "bugs": {
-    "url": "https://github.com/afkhalid/ghostfill/issues"
+    "url": "https://github.com/AhmedFathyDev/ghostfill/issues"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

@@ -1,8 +1,56 @@
 # GhostFill
 
-Dev tool that fills form fields with sample data. Select a block, click fill — done.
+Stop demoing with test123. Generate realistic, domain-aware form data in one click.
 
-Works with any framework (React, Vue, Angular, vanilla). Detects inputs, textareas, selects, checkboxes, radios, date pickers, and custom dropdowns (Headless UI, Radix).
+## The Problem
+
+Every team has this story. A PM is demoing to a client, and right there on the screen: "Cheeseburger" in the company name field, "asdf" for the email, and "John Doe" — the same John Doe — on every single record. QA tests with garbage. Designers screenshot forms full of "test123". There's no easy way to fill forms with realistic, context-appropriate data without writing seed scripts or maintaining test fixtures.
+
+**Before GhostFill:**
+```
+First Name:    test
+Last Name:     test
+Email:         test@test.com
+Company:       asdfasdf
+Job Title:     fjdksl
+Phone:         1234567890
+Address:       123 test street
+```
+
+**After GhostFill:**
+```
+First Name:    Sarah
+Last Name:     Mitchell
+Email:         s.mitchell@northwind.com
+Company:       Northwind Traders
+Job Title:     Senior Account Executive
+Phone:         +1 (312) 555-0187
+Address:       401 N Michigan Ave, Chicago, IL 60611
+```
+
+One click. Any form. No seed scripts.
+
+## Who It's For
+
+**Developers** install it — `npm install ghostfill -D`, one import, done. But the whole team benefits:
+
+- **QA Engineers** — fill forms with realistic edge cases instead of copy-pasting the same test data
+- **Product Managers** — demo to clients with professional-looking data, not "test123"
+- **Designers** — screenshot real-looking forms for decks and specs
+- **Solution Architects** — show realistic D365, Salesforce, or ERP data during workshops
+
+## Not Another Faker
+
+faker.js fills your database. Browser autofill fills *your* data. GhostFill fills the form you're looking at — visually, with data that fits the context.
+
+| | GhostFill | faker.js | Browser Autofill |
+|---|---|---|---|
+| **Who uses it** | Anyone on the team | Developers only | Individual user |
+| **How it works** | Visual in-page UI | Code library | Browser feature |
+| **Data quality** | Domain-aware, contextual | Random but typed | Your personal data |
+| **Form detection** | Reads labels, selects, custom dropdowns | N/A — you call it in code | Standard inputs only |
+| **Domain presets** | D365, Healthcare, E-commerce, etc. | Generic schemas | N/A |
+| **Setup** | One import, zero config | Write generation scripts | Already there |
 
 ## Install
 
@@ -59,6 +107,18 @@ await fill({ container: document.querySelector("form") });
 3. Click the sparkles button to fill all detected fields
 4. By default, generates random sample data locally (no API needed)
 5. Optionally enable AI mode in settings for context-aware data generation through your backend
+
+## Presets
+
+Save prompt templates for domain-specific data:
+
+- **D365 CE** — Accounts, Contacts, Opportunities with CRM-realistic values
+- **Healthcare** — Patient intake, insurance, clinical forms
+- **E-commerce** — Products, orders, customer profiles
+- **Automotive** — Vehicle specs, service records, dealer info
+- **Custom** — Write your own prompt template for any domain
+
+Presets are stored locally in the browser and sent as context to the AI provider.
 
 ## Secure AI Setup
 
