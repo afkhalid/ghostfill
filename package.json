@@ -1,6 +1,6 @@
 {
-  "name": "@afkhalid/ghostfill",
-  "version": "0.2.1",
+  "name": "ghostfill",
+  "version": "0.2.3",
   "description": "Stop demoing with test123. Realistic, domain-aware form data in one click.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -36,17 +36,14 @@
     "developer-tool"
   ],
   "author": "afkhalid",
-  "license": "MIT",
+  "license": "PolyForm-Shield-1.0.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AhmedFathyDev/ghostfill.git"
+    "url": "git+https://github.com/afkhalid/ghostfill.git"
   },
-  "homepage": "https://github.com/AhmedFathyDev/ghostfill#readme",
+  "homepage": "https://github.com/afkhalid/ghostfill#readme",
   "bugs": {
-    "url": "https://github.com/AhmedFathyDev/ghostfill/issues"
-  },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "url": "https://github.com/afkhalid/ghostfill/issues"
   },
   "devDependencies": {
     "tsup": "^8.0.0",

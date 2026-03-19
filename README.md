@@ -257,4 +257,4 @@ Returns `{ filled: number, errors: string[] }`.
 
 ## License
 
-MIT
+[PolyForm Shield 1.0.0](https://polyformproject.org/licenses/shield/1.0.0) — free to use, but you can't use it to build a competing product.

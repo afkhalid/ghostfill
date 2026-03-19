@@ -732,7 +732,7 @@ export function createOverlay(options: GhostFillOptions): {
     <div class="gf-pop-header">
       <h3><span class="gf-slash">/</span>ghostfill</h3>
       <div class="gf-header-right">
-        <span class="gf-version">v0.2.1</span>
+        <span class="gf-version">v0.2.3</span>
         <button class="gf-theme-btn" id="gf-s-theme" title="Toggle theme">
           ${saved.theme === "dark" ? ICONS.sun : ICONS.moon}
         </button>
@@ -800,7 +800,7 @@ export function createOverlay(options: GhostFillOptions): {
         </div>
         <div class="gf-field" style="flex:1;display:flex;flex-direction:column">
           <label class="gf-label">Prompt</label>
-          <textarea class="gf-input" id="gf-s-preset-prompt" placeholder="Describe the context for this preset...&#10;&#10;e.g. Generate data for a Microsoft Dynamics 365 Customer Engagement implementation. Use CRM terminology, consulting project names, and Microsoft partner context." style="flex:1;min-height:120px;resize:none"></textarea>
+          <textarea class="gf-input" id="gf-s-preset-prompt" placeholder="Describe the context for this preset...&#10;&#10;e.g. Generate data for a Microsoft Dynamics 365 Customer Engagement implementation. Use CRM terminology, consulting project names, and Microsoft partner context." style="flex:1;min-height:180px;resize:none"></textarea>
         </div>
         <div class="gf-preset-form-actions">
           <button class="gf-preset-form-btn cancel" id="gf-s-preset-cancel">Cancel</button>
@@ -1597,6 +1597,26 @@ export function createOverlay(options: GhostFillOptions): {
     }
   }
   document.addEventListener("keydown", handleShortcut);
+
+  // Click outside popover to close it
+  document.addEventListener("mousedown", (e) => {
+    if (!currentPopover) return;
+    const target = e.target as Node;
+    // Don't close if clicking inside the shadow DOM (toolbar, settings, prompt panels)
+    if (host.contains(target)) return;
+    openPopover(null);
+  });
+
+  // Also handle clicks inside shadow DOM that are outside the panels
+  shadow.addEventListener("mousedown", (e) => {
+    if (!currentPopover) return;
+    const target = e.target as HTMLElement;
+    const inSettings = settingsPop.contains(target) || btnSettings.contains(target);
+    const inPrompt = promptPop.contains(target) || btnFill.contains(target);
+    if (!inSettings && !inPrompt) {
+      openPopover(null);
+    }
+  });
 
   // Esc: close popover first, then minimize bar
   document.addEventListener("keydown", (e) => {
