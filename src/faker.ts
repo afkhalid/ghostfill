@@ -66,8 +66,8 @@ function generateForField(field: DetectedField, context: { firstName: string; la
 
   // Number
   if (field.type === "number" || field.type === "range") {
-    const min = field.min ? parseInt(field.min) : 1;
-    const max = field.max ? parseInt(field.max) : 100;
+    const min = field.min ? parseInt(field.min, 10) || 1 : 1;
+    const max = field.max ? parseInt(field.max, 10) || 100 : 100;
     return String(randInt(min, max));
   }
 

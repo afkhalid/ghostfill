@@ -1,4 +1,5 @@
 import type { DetectedField, FieldFillData } from "./types";
+import { findLabel } from "./detector";
 
 /**
  * Set value on an input/textarea/select and dispatch events that React,
@@ -38,19 +39,129 @@ async function fillCustomSelect(button: HTMLElement, value: string): Promise<voi
   // Click the button to open the dropdown
   button.click();
 
-  // Wait for the listbox to appear (Headless UI renders it after a tick)
-  await new Promise((r) => setTimeout(r, 200));
+  // Wait for dropdown to appear — poll up to 500ms for listbox or any new panel
+  let waited = 0;
+  const step = 50;
+  while (waited < 500) {
+    await new Promise((r) => setTimeout(r, step));
+    waited += step;
+    // Check for role=listbox
+    const lb = button.getAttribute("aria-controls")
+      ? document.getElementById(button.getAttribute("aria-controls")!)
+      : button.parentElement?.querySelector("[role=listbox]") || document.querySelector("[role=listbox]");
+    if (lb) break;
+    // Check for a sibling panel that appeared (conditionally rendered dropdowns)
+    const cont = button.closest("[class*='relative']") || button.parentElement;
+    if (cont) {
+      const divs = cont.querySelectorAll("div");
+      for (const d of divs) {
+        if (d === button || d.contains(button) || button.contains(d)) continue;
+        if (d.classList.toString().includes("absolute") || d.classList.toString().includes("z-50")) {
+          waited = 999; // found it, break out
+          break;
+        }
+      }
+    }
+  }
 
-  // Find the listbox — could be a sibling, or anywhere in the document
+  // Find the listbox — could be a sibling, portal to body, or anywhere
   const listboxId = button.getAttribute("aria-controls");
   let listbox: Element | null = listboxId ? document.getElementById(listboxId) : null;
   if (!listbox) {
-    listbox = button.parentElement?.querySelector("[role=listbox]") || document.querySelector("[role=listbox]");
+    listbox = button.parentElement?.querySelector("[role=listbox]") || null;
+  }
+  if (!listbox) {
+    // Check all listboxes in the document — pick the one that's visible
+    const all = document.querySelectorAll("[role=listbox]");
+    for (const lb of all) {
+      if ((lb as HTMLElement).offsetParent !== null || (lb as HTMLElement).offsetHeight > 0) {
+        listbox = lb;
+        break;
+      }
+    }
   }
 
-  if (listbox) {
-    const options = listbox.querySelectorAll("[role=option]");
+  // Collect clickable options — try [role=option] first, then fall back to buttons/divs in popup
+  let options: NodeListOf<Element> | Element[] = listbox
+    ? listbox.querySelectorAll("[role=option]")
+    : [] as Element[];
 
+  // If no role=option found, look for a popup panel near the button with clickable items
+  if ((!listbox || options.length === 0)) {
+    let panel: Element | null = null;
+
+    // Strategy 1: Check direct children of the button's parent container
+    const container = button.closest("[class*='relative']") || button.parentElement;
+    if (container) {
+      for (const child of Array.from(container.children)) {
+        if (child === button || child.contains(button)) continue;
+        if (child.tagName === "LABEL" || child.tagName === "P" || child.tagName === "SPAN") continue;
+        const el = child as HTMLElement;
+        const style = window.getComputedStyle(el);
+        if (
+          el.classList.contains("absolute") ||
+          el.classList.contains("z-50") ||
+          style.position === "absolute" ||
+          style.position === "fixed"
+        ) {
+          panel = el;
+          break;
+        }
+      }
+    }
+
+    // Strategy 2: Check siblings of the button directly
+    if (!panel) {
+      let sibling = button.nextElementSibling;
+      while (sibling) {
+        const tag = sibling.tagName;
+        if (tag !== "P" && tag !== "LABEL" && tag !== "SPAN" && tag === "DIV") {
+          panel = sibling;
+          break;
+        }
+        sibling = sibling.nextElementSibling;
+      }
+    }
+
+    if (panel && panel !== button) {
+      // Wait for panel contents to render — poll until buttons appear (up to 1s for async data)
+      let contentWait = 0;
+      while (contentWait < 1000) {
+        await new Promise((r) => setTimeout(r, 100));
+        contentWait += 100;
+        const btns = panel.querySelectorAll("button");
+        // Need at least one button that's not just a search wrapper
+        let realBtns = 0;
+        for (const b of btns) {
+          if (!b.querySelector("input")) realBtns++;
+        }
+        if (realBtns > 0) break;
+      }
+
+      // Get all clickable items inside the panel (skip search inputs and utility buttons)
+      const clickables = panel.querySelectorAll("button, [role=option], [data-value], li");
+      const filtered: Element[] = [];
+      for (const c of clickables) {
+        // Skip search inputs, clear buttons, close buttons
+        const text = c.textContent?.trim() || "";
+        if (!text || text === "×" || text === "✕") continue;
+        if ((c as HTMLElement).querySelector("input")) continue;
+        // Skip if it looks like the trigger button itself
+        if (c === button) continue;
+        // Skip if it's a search input wrapper
+        const hasInput = c.querySelector("input[type='text'], input[type='search']");
+        if (hasInput) continue;
+        filtered.push(c);
+      }
+
+      if (filtered.length > 0) {
+        options = filtered;
+        listbox = panel;
+      }
+    }
+  }
+
+  if (options.length > 0) {
     // Try exact match
     for (const opt of options) {
       const text = opt.textContent?.trim();
@@ -74,7 +185,7 @@ async function fillCustomSelect(button: HTMLElement, value: string): Promise<voi
     // No match — pick the first real option (skip placeholders)
     for (const opt of options) {
       const text = (opt.textContent?.trim() || "").toLowerCase();
-      const isPlaceholder = text.startsWith("select") || text === "" || text === "---" || text === "choose" || text.startsWith("choose");
+      const isPlaceholder = text.startsWith("select") || text === "" || text === "---" || text === "choose" || text.startsWith("choose") || text.startsWith("search");
       if (!isPlaceholder) {
         (opt as HTMLElement).click();
         await new Promise((r) => setTimeout(r, 50));
@@ -194,7 +305,7 @@ export async function fillFields(
         filled++;
       } else {
         // text, email, number, date, datetime-local, tel, url, textarea
-        setNativeValue(el, item.value);
+        setNativeValue(el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, item.value);
         focusBlur(el);
         filled++;
       }
@@ -214,20 +325,4 @@ export async function fillFields(
   }
 
   return { filled, errors };
-}
-
-function findLabel(el: HTMLElement): string {
-  if (el.id) {
-    const label = document.querySelector<HTMLLabelElement>(
-      `label[for="${CSS.escape(el.id)}"]`
-    );
-    if (label?.textContent?.trim()) return label.textContent.trim();
-  }
-  const parent = el.closest("label");
-  if (parent) {
-    const clone = parent.cloneNode(true) as HTMLElement;
-    clone.querySelectorAll("input").forEach((c) => c.remove());
-    return clone.textContent?.trim() || "";
-  }
-  return "";
 }

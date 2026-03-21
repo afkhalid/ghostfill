@@ -263,7 +263,7 @@ const CSS = `
     font-size: 13px; font-weight: 600; color: #fff;
     letter-spacing: -0.0094em;
   }
-  .gf-pop-header .gf-slash { color: rgba(255,255,255,0.5); }
+  .gf-pop-header .gf-slash { color: #6366f1; }
   .gf-pop-header .gf-header-right {
     display: flex; align-items: center; gap: 6px;
   }
@@ -562,7 +562,7 @@ export function createOverlay(options: GhostFillOptions): {
 
   const state: GhostFillState = {
     active: false, selecting: false, selectedBlock: null,
-    fields: [], overlay: host, shadowRoot: shadow,
+    fields: [],
   };
 
   // ── Toolbar ──

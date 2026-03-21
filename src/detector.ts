@@ -11,7 +11,7 @@ const INPUT_SELECTORS = [
 ].join(", ");
 
 /** Find the label text for a form field */
-function findLabel(el: HTMLElement): string {
+export function findLabel(el: HTMLElement): string {
   // 1. Explicit <label for="id">
   if (el.id) {
     const label = document.querySelector<HTMLLabelElement>(
@@ -128,7 +128,7 @@ export function detectFields(container: HTMLElement): DetectedField[] {
       const looksLikePlaceholder = buttonText.toLowerCase().startsWith("select") || buttonText === "";
 
       const field: DetectedField = {
-        element: el as any,
+        element: el as HTMLElement,
         type: "select",
         name: el.id || el.getAttribute("name") || "",
         label: findLabel(el),

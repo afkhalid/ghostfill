@@ -77,7 +77,7 @@ export interface GhostFillSettings {
 /** A detected form field */
 export interface DetectedField {
   /** The DOM element */
-  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLElement;
   /** Field type: text, email, number, select, textarea, checkbox, radio, date, etc. */
   type: string;
   /** Field name attribute */
@@ -113,6 +113,4 @@ export interface GhostFillState {
   selecting: boolean;
   selectedBlock: HTMLElement | null;
   fields: DetectedField[];
-  overlay: HTMLElement | null;
-  shadowRoot: ShadowRoot | null;
 }

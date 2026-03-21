@@ -1,6 +1,6 @@
 {
   "name": "ghostfill",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Stop demoing with test123. Realistic, domain-aware form data in one click.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

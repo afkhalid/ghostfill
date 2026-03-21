@@ -6,7 +6,7 @@ type CancelCallback = () => void;
 let currentHighlight: HTMLElement | null = null;
 let overlay: HTMLDivElement | null = null;
 
-function createOverlay(color: string): HTMLDivElement {
+function createSelectorOverlay(color: string): HTMLDivElement {
   const div = document.createElement("div");
   div.id = "ghostfill-selector-overlay";
   // Convert hex to rgba for background
@@ -27,7 +27,7 @@ function createOverlay(color: string): HTMLDivElement {
 }
 
 function positionOverlay(el: HTMLElement, color: string) {
-  if (!overlay) overlay = createOverlay(color);
+  if (!overlay) overlay = createSelectorOverlay(color);
   const rect = el.getBoundingClientRect();
   Object.assign(overlay.style, {
     top: `${rect.top}px`,
