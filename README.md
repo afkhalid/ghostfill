@@ -152,14 +152,14 @@ const clients: Record<Provider, OpenAI> = {
   }),
   moonshot: new OpenAI({
     apiKey: process.env.MOONSHOT_API_KEY,
-    baseURL: "https://api.moonshot.cn/v1",
+    baseURL: "https://api.moonshot.ai/v1",
   }),
 };
 
 const models: Record<Provider, string> = {
   openai: process.env.GHOSTFILL_OPENAI_MODEL || "gpt-4o-mini",
   xai: process.env.GHOSTFILL_XAI_MODEL || "grok-4-fast",
-  moonshot: process.env.GHOSTFILL_MOONSHOT_MODEL || "moonshot-v1-8k",
+  moonshot: process.env.GHOSTFILL_MOONSHOT_MODEL || "kimi-k2",
 };
 
 function isProvider(value: unknown): value is Provider {
@@ -254,6 +254,32 @@ await fill({
 ```
 
 Returns `{ filled: number, errors: string[] }`.
+
+## MCP Server
+
+GhostFill includes an MCP (Model Context Protocol) server so AI agents like Claude Code and Cursor can generate form data directly.
+
+```json
+{
+  "mcpServers": {
+    "ghostfill": {
+      "command": "npx",
+      "args": ["ghostfill-mcp"]
+    }
+  }
+}
+```
+
+**Tools:**
+
+- `ghostfill_generate` — Generate realistic fake data locally. No API key required.
+- `ghostfill_generate_ai` — Generate context-aware data via OpenAI, xAI, or Moonshot. Requires an API key.
+
+Requires `@modelcontextprotocol/sdk` and `zod` as peer dependencies:
+
+```bash
+npm install @modelcontextprotocol/sdk zod
+```
 
 ## License
 

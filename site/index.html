@@ -1805,12 +1805,12 @@
     }
 
     .demo-ghost-btn {
-      width: 44px; height: 44px;
+      width: 48px; height: 48px;
       border-radius: 50%; border: none;
       background: #18181b; color: #e4e4e7;
       cursor: pointer;
       display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 0 20px rgba(99,102,241,0.35), 0 0 40px rgba(99,102,241,0.12), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.2);
+      box-shadow: 0 0 20px rgba(99,102,241,0.3), 0 0 40px rgba(99,102,241,0.1), 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(99,102,241,0.15);
       transition: color 0.2s, box-shadow 0.3s, transform 0.2s;
     }
     .demo-ghost-btn svg {
@@ -1819,7 +1819,7 @@
     .demo-ghost-btn:hover {
       color: #fff;
       transform: scale(1.1);
-      box-shadow: 0 0 30px rgba(99,102,241,0.5), 0 0 60px rgba(99,102,241,0.2), 0 4px 12px rgba(0,0,0,0.4), 0 0 0 1px rgba(99,102,241,0.3);
+      box-shadow: 0 0 30px rgba(99,102,241,0.5), 0 0 60px rgba(99,102,241,0.2), 0 4px 16px rgba(0,0,0,0.35), 0 0 0 1px rgba(99,102,241,0.3);
     }
     .demo-ghost-btn:hover svg {
       animation: demoGhostWobble 1.5s ease-in-out infinite;
@@ -2367,7 +2367,7 @@
         </button>
       </div>
 
-      <p class="hero-note">Works with <span>React, Vue, Angular, vanilla JS</span> &mdash; devs install, everyone benefits</p>
+      <p class="hero-note">Works with <span>React, Vue, Angular, vanilla JS</span> &mdash; also available as an <span>MCP server</span> for AI agents</p>
     </div>
   </section>
 
@@ -2901,6 +2901,10 @@
           <button class="code-tab-btn active" onclick="switchTab(this, 'vanilla')">Vanilla JS</button>
           <button class="code-tab-btn" onclick="switchTab(this, 'react')">React / Next.js</button>
           <button class="code-tab-btn" onclick="switchTab(this, 'vue')">Vue</button>
+          <button class="code-tab-btn" onclick="switchTab(this, 'mcp')" style="display:flex;align-items:center;gap:5px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 0 0-4 4v2H6a4 4 0 0 0-4 4v4a4 4 0 0 0 4 4h12a4 4 0 0 0 4-4v-4a4 4 0 0 0-4-4h-2V6a4 4 0 0 0-4-4z"/><circle cx="9" cy="14" r="1.5" fill="currentColor"/><circle cx="15" cy="14" r="1.5" fill="currentColor"/></svg>
+            MCP Server
+          </button>
         </div>
 
         <div class="code-panel active" id="panel-vanilla">
@@ -2909,9 +2913,11 @@
             <pre><span class="cm">// Install</span>
 <span class="cm">// npm install ghostfill -D</span>
 
-<span class="kw">import</span> <span class="str">'ghostfill'</span><span class="op">;</span>
+<span class="kw">import</span> { <span class="fn">init</span> } <span class="kw">from</span> <span class="str">'ghostfill'</span><span class="op">;</span>
 
-<span class="cm">// That's it. The ghost icon appears in dev mode.</span>
+<span class="fn">init</span>()<span class="op">;</span>
+
+<span class="cm">// That's it. The ghost icon appears on the page.</span>
 <span class="cm">// Click it to start filling forms.</span></pre>
           </div>
         </div>
@@ -2923,11 +2929,13 @@
 <span class="cm">// npm install ghostfill -D</span>
 
 <span class="cm">// In your _app.tsx or layout.tsx:</span>
-<span class="kw">import</span> <span class="str">'ghostfill'</span><span class="op">;</span>
+<span class="kw">import</span> { <span class="fn">init</span> } <span class="kw">from</span> <span class="str">'ghostfill'</span><span class="op">;</span>
+
+<span class="fn">init</span>()<span class="op">;</span>
 
 <span class="cm">// Or conditionally in development only:</span>
 <span class="kw">if</span> (process.env.<span class="prop">NODE_ENV</span> <span class="op">===</span> <span class="str">'development'</span>) {
-  <span class="fn">require</span>(<span class="str">'ghostfill'</span>)<span class="op">;</span>
+  <span class="fn">import</span>(<span class="str">'ghostfill'</span>).<span class="fn">then</span>(m <span class="op">=></span> m.<span class="fn">init</span>())<span class="op">;</span>
 }</pre>
           </div>
         </div>
@@ -2939,10 +2947,32 @@
 <span class="cm">// npm install ghostfill -D</span>
 
 <span class="cm">// In your main.ts or main.js:</span>
-<span class="kw">import</span> <span class="str">'ghostfill'</span><span class="op">;</span>
+<span class="kw">import</span> { <span class="fn">init</span> } <span class="kw">from</span> <span class="str">'ghostfill'</span><span class="op">;</span>
+
+<span class="fn">init</span>()<span class="op">;</span>
 
 <span class="cm">// GhostFill auto-detects Vue's reactivity</span>
 <span class="cm">// and triggers proper change events.</span></pre>
+          </div>
+        </div>
+
+        <div class="code-panel" id="panel-mcp">
+          <div class="code-block">
+            <button class="code-copy-btn" onclick="copyCode(this, 'mcp')">Copy</button>
+            <pre><span class="cm">// Add to Claude Code, Cursor, or any MCP client:</span>
+
+<span class="cm">// claude_desktop_config.json</span>
+{
+  <span class="str">"mcpServers"</span><span class="op">:</span> {
+    <span class="str">"ghostfill"</span><span class="op">:</span> {
+      <span class="str">"command"</span><span class="op">:</span> <span class="str">"npx"</span><span class="op">,</span>
+      <span class="str">"args"</span><span class="op">:</span> [<span class="str">"ghostfill-mcp"</span>]
+    }
+  }
+}
+
+<span class="cm">// Tools: ghostfill_generate (local, no API key)</span>
+<span class="cm">//        ghostfill_generate_ai (OpenAI/xAI/Moonshot)</span></pre>
           </div>
         </div>
       </div>
@@ -3005,9 +3035,10 @@
 
     /* ---- Code block snippets ---- */
     var codeSnippets = {
-      vanilla: "import 'ghostfill';",
-      react: "// In your _app.tsx or layout.tsx:\nimport 'ghostfill';\n\n// Or conditionally in development only:\nif (process.env.NODE_ENV === 'development') {\n  require('ghostfill');\n}",
-      vue: "// In your main.ts or main.js:\nimport 'ghostfill';\n\n// GhostFill auto-detects Vue's reactivity\n// and triggers proper change events."
+      vanilla: "import { init } from 'ghostfill';\n\ninit();",
+      react: "// In your _app.tsx or layout.tsx:\nimport { init } from 'ghostfill';\n\ninit();\n\n// Or conditionally in development only:\nif (process.env.NODE_ENV === 'development') {\n  import('ghostfill').then(m => m.init());\n}",
+      vue: "// In your main.ts or main.js:\nimport { init } from 'ghostfill';\n\ninit();\n\n// GhostFill auto-detects Vue's reactivity\n// and triggers proper change events.",
+      mcp: "// claude_desktop_config.json\n{\n  \"mcpServers\": {\n    \"ghostfill\": {\n      \"command\": \"npx\",\n      \"args\": [\"ghostfill-mcp\"]\n    }\n  }\n}"
     };
 
     /* ---- Copy code block ---- */
@@ -3446,7 +3477,7 @@
 
   <!-- Load GhostFill for the live demo -->
   <script type="module">
-    const paths = ["../dist/index.mjs", "/dist/index.mjs", "./dist/index.mjs"];
+    const paths = ["./dist/index.mjs", "/dist/index.mjs", "../dist/index.mjs"];
     let gfLoaded = false;
     for (const p of paths) {
       try {

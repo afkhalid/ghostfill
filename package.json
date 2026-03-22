@@ -1,6 +1,6 @@
 {
   "name": "ghostfill",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "Stop demoing with test123. Realistic, domain-aware form data in one click.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -15,7 +15,14 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.mjs",
       "require": "./dist/server.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.mjs"
     }
+  },
+  "bin": {
+    "ghostfill-mcp": "dist/mcp.mjs"
   },
   "files": [
     "dist"
@@ -33,7 +40,9 @@
     "openai",
     "fake-data",
     "testing",
-    "developer-tool"
+    "developer-tool",
+    "mcp",
+    "model-context-protocol"
   ],
   "author": "afkhalid",
   "license": "PolyForm-Shield-1.0.0",
@@ -48,5 +57,17 @@
   "devDependencies": {
     "tsup": "^8.0.0",
     "typescript": "^5.4.0"
+  },
+  "peerDependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "zod": "^3.23.0 || ^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@modelcontextprotocol/sdk": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
   }
 }
