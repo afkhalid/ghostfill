@@ -3485,13 +3485,12 @@
         m.init();
         gfLoaded = true;
 
-        // Hide the default FAB — we use the demo button instead
-        setTimeout(() => {
-          const host = document.getElementById("ghostfill-root");
-          if (!host || !host.shadowRoot) return;
+        // Hide the default FAB immediately — we use the demo button instead
+        const host = document.getElementById("ghostfill-root");
+        if (host && host.shadowRoot) {
           const fab = host.shadowRoot.querySelector(".gf-fab");
-          if (fab) fab.style.display = "none";
-        }, 300);
+          if (fab) fab.classList.remove("visible");
+        }
 
         // Wire demo ghost button to trigger GhostFill
         document.getElementById("demoGhostBtn").addEventListener("click", () => {
